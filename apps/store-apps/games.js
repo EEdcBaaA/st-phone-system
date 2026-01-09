@@ -10,12 +10,12 @@ window.STPhone.Apps.Games = (function() {
                 position: absolute; top: 0; left: 0;
                 width: 100%; height: 100%; z-index: 999;
                 display: flex; flex-direction: column;
-                background: #1a1a2e;
+                background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
                 color: #fff;
                 font-family: var(--pt-font, -apple-system, sans-serif);
             }
             .st-games-header {
-                padding: 20px 20px 15px;
+                padding: 20px 15px 10px;
                 text-align: center;
                 flex-shrink: 0;
             }
@@ -47,7 +47,7 @@ window.STPhone.Apps.Games = (function() {
                 transform: scale(1.02);
             }
             .st-game-card-icon {
-                font-size: 36px;
+                font-size: 48px;
                 margin-bottom: 10px;
             }
             .st-game-card-name {
@@ -64,7 +64,7 @@ window.STPhone.Apps.Games = (function() {
             .st-number-game {
                 position: absolute; top: 0; left: 0;
                 width: 100%; height: 100%;
-                background: #24243e;
+                background: linear-gradient(180deg, #0f0c29, #302b63, #24243e);
                 display: flex; flex-direction: column;
                 align-items: center;
                 justify-content: center;
@@ -137,7 +137,7 @@ window.STPhone.Apps.Games = (function() {
             .st-rps-game {
                 position: absolute; top: 0; left: 0;
                 width: 100%; height: 100%;
-                background: #00b894;
+                background: linear-gradient(180deg, #00b894, #00cec9);
                 display: flex; flex-direction: column;
                 align-items: center;
                 padding: 20px;
@@ -189,10 +189,10 @@ window.STPhone.Apps.Games = (function() {
                 margin-top: 30px;
             }
             .st-rps-btn {
-                font-size: 36px;
+                font-size: 48px;
                 background: rgba(255,255,255,0.2);
                 border: none;
-                width: 70px; height: 70px;
+                width: 80px; height: 80px;
                 border-radius: 50%;
                 cursor: pointer;
                 transition: transform 0.2s, background 0.2s;
