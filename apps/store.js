@@ -390,6 +390,16 @@ window.STPhone.Apps.Store = (function() {
             version: '1.0.0',
             size: '0.8 MB',
             icon: '🎨'
+        },
+        {
+            id: 'bank',
+            name: '은행',
+            bg: 'linear-gradient(135deg, #1e3c72, #2a5298)',
+            category: '금융',
+            description: '가상 은행 앱! 잔액 관리, 송금, 고정 지출/입금 기능을 제공합니다. 캘린더 앱과 연동하여 자동 처리됩니다.',
+            version: '1.0.0',
+            size: '0.6 MB',
+            icon: '💰'
         }
     ];
 
@@ -471,12 +481,12 @@ window.STPhone.Apps.Store = (function() {
         if (index > -1) {
             installedApps.splice(index, 1);
             saveInstalledApps();
-            
+
             // 테마 앱 삭제 시 테마 데이터도 삭제
             if (appId === 'theme' && window.STPhone.Apps?.Theme?.clearTheme) {
                 window.STPhone.Apps.Theme.clearTheme();
             }
-            
+
             return true;
         }
         return false;
@@ -736,6 +746,9 @@ window.STPhone.Apps.Store = (function() {
                 break;
             case 'theme':
                 Apps.Theme?.open();
+                break;
+            case 'bank':
+                Apps.Bank?.open();
                 break;
             default:
                 toastr.warning('앱을 찾을 수 없습니다.');
