@@ -785,9 +785,9 @@ window.STPhone.Apps.Bank = (function() {
         const curr = CURRENCIES[currency];
         const myName = getUserName();
         // 잔액 정보만 전달 (AI가 잔액 표시 안 함)
-        return `[💰 ${myName} 은행 정보 - 시스템 전용, 응답에 표시 금지]
-현재 잔액: ${formatAmount(balance)}
-이 정보는 RP 참고용이며, 응답에 잔액을 직접 표시하지 마세요.`;
+        return `[💰 ${myName}'s Bank Info - SYSTEM ONLY, DO NOT DISPLAY IN RESPONSE]
+Current Balance: ${formatAmount(balance)}
+This is for RP reference only. Do not directly mention the balance in your response.`;
     }
 
     function generateBankSystemPrompt() {
@@ -799,37 +799,56 @@ window.STPhone.Apps.Bank = (function() {
         const contacts = window.STPhone?.Apps?.Contacts?.getAllContacts?.() || [];
         const contactNames = contacts.map(c => c.name).join(', ');
 
-        let prompt = `[💰 은행 시스템 - 시스템 전용, 응답에 표시 금지]
-${myName}의 현재 은행 잔액: ${formatAmount(balance)}
-통화 단위: ${curr.name}
+        let prompt = `[💰 Bank System - SYSTEM ONLY, DO NOT DISPLAY IN RESPONSE]
+${myName}'s current bank balance: ${formatAmount(balance)}
+Currency: ${curr.name}
 
-### 송금 형식 (💰 이모티콘 통일)
-캐릭터가 ${myName}에게 돈을 보낼 때:
-[💰 캐릭터이름 송금 ${myName}: 금액${curr.symbol}]
+### Important: Character Knowledge
+Characters do NOT know ${myName}'s bank balance unless ${myName} tells them.
+This balance info is for the SYSTEM to track purchases/transfers only.
+Do not mention specific balance amounts in RP unless ${myName} shares it.
 
-⚠️ 중요: 이름은 연락처에 저장된 이름 그대로 사용하세요!
-등록된 연락처: ${contactNames || '(없음)'}
-예시: 연락처가 "Kayn"이면 "Kayn Hart" 같이 풀네임으로 바꾸지 마세요.
+### Transfer Format (Use 💰 emoji)
+When a character sends money to ${myName}:
+[💰 캐릭터이름 송금 ${myName}: amount${curr.symbol}]
 
-### 잔액 표시 규칙
-⚠️ 중요: 잔액은 시스템이 자동으로 계산합니다. 응답에 [💰 ... 잔액: ...] 형식을 절대 사용하지 마세요!
-송금 시에만 [💰 보내는사람 송금 받는사람: 금액] 형식을 사용하세요.`;
+### Purchase/Expense Format
+When ${myName} buys something or spends money:
+[💰 가게이름/항목 출금 ${myName}: amount${curr.symbol}]
+Examples:
+[💰 편의점 출금 ${myName}: 5000${curr.symbol}]
+[💰 택시비 출금 ${myName}: 15000${curr.symbol}]
+[💰 카페 출금 ${myName}: 4500${curr.symbol}]
+
+🚫 Insufficient Balance Rules (CRITICAL!)
+${myName}'s current balance is ${formatAmount(balance)}.
+- ${myName} CANNOT buy anything that costs more than their balance!
+- If insufficient funds, refuse in RP naturally (e.g., "I don't have enough money...", "My wallet is empty...")
+- Do NOT pretend to buy something without the withdrawal tag.
+- If balance is 0, ${myName} cannot purchase ANYTHING!
+
+⚠️ Important: Use contact names exactly as registered!
+Registered contacts: ${contactNames || '(none)'}
+
+### Balance Display Rules
+⚠️ NEVER use [💰 ... 잔액: ...] format in responses! The system calculates balance automatically.
+Only use the transfer/withdrawal formats above.`;
 
         // 고정 지출/입금 정보 추가
         if (recurringEnabled && (recurringExpenses.length > 0 || recurringIncomes.length > 0)) {
-            prompt += `\n\n[유저의 고정 재정 정보]`;
+            prompt += `\n\n[${myName}'s Recurring Financial Info]`;
 
             if (recurringExpenses.length > 0) {
-                prompt += `\n고정 지출 (매월):`;
+                prompt += `\nRecurring Expenses (Monthly):`;
                 recurringExpenses.forEach(e => {
-                    prompt += `\n- ${e.dayOfMonth}일: ${e.name} (${formatAmount(e.amount)})`;
+                    prompt += `\n- Day ${e.dayOfMonth}: ${e.name} (${formatAmount(e.amount)})`;
                 });
             }
 
             if (recurringIncomes.length > 0) {
-                prompt += `\n\n고정 수입 (매월):`;
+                prompt += `\n\nRecurring Income (Monthly):`;
                 recurringIncomes.forEach(i => {
-                    prompt += `\n- ${i.dayOfMonth}일: ${i.name} (${formatAmount(i.amount)})`;
+                    prompt += `\n- Day ${i.dayOfMonth}: ${i.name} (${formatAmount(i.amount)})`;
                 });
             }
         }
@@ -891,29 +910,8 @@ ${myName}의 현재 은행 잔액: ${formatAmount(balance)}
                 });
                 saveData();
                 toastr.success(`💰 ${senderRaw}님이 ${formatAmount(amount)} 송금! (현재: ${formatAmount(balance)})`);
-
-                // 문자앱에 송금 알림 메시지 추가
-                const Messages = window.STPhone?.Apps?.Messages;
-                if (Messages) {
-                    // 연락처 찾기
-                    const contacts = window.STPhone?.Apps?.Contacts?.getAllContacts?.() || [];
-                    const senderLowerName = senderRaw.toLowerCase();
-                    const matchedContact = contacts.find(c =>
-                        c.name.toLowerCase() === senderLowerName ||
-                        c.name.toLowerCase().includes(senderLowerName) ||
-                        senderLowerName.includes(c.name.toLowerCase())
-                    );
-
-                    if (matchedContact) {
-                        const sysMsg = `💰 ${senderRaw}님이 ${myName}님에게 ${formatAmount(amount)}을 송금했습니다.`;
-                        Messages.addMessage(matchedContact.id, 'system', sysMsg);
-                    }
-
-                    // 뱃지 업데이트
-                    if (typeof Messages.updateMessagesBadge === 'function') {
-                        Messages.updateMessagesBadge();
-                    }
-                }
+                // 메시지는 AI 응답에 이미 포함되어 있으므로 별도로 보내지 않음
+                // 화면에서는 formatBankTagForDisplay로 예쁘게 변환됨
             } else if (isSenderUser && !isReceiverUser) {
                 // 유저가 캐릭터에게 송금 -> 자동으로 잔액 차감
                 if (balance >= amount) {
@@ -922,7 +920,48 @@ ${myName}의 현재 은행 잔액: ${formatAmount(balance)}
                 }
             }
         }
-        // 잔액 패턴은 더 이상 파싱하지 않음 - 송금만으로 잔액 자동 계산
+
+        // 출금/구매 패턴: [💰 가게이름 출금 유저이름: 금액]
+        const withdrawPattern = /\[💰\s*([^출]+)\s*출금\s*([^:：]+)[:\s：]+\s*[\$₩€¥£]?\s*([\d,]+)\s*[\$₩€¥£원]?\s*\]/gi;
+        let withdrawMatch;
+
+        while ((withdrawMatch = withdrawPattern.exec(text)) !== null) {
+            const shopName = withdrawMatch[1].trim();
+            const targetName = withdrawMatch[2].trim();
+            const amount = parseInt(withdrawMatch[3].replace(/,/g, ''));
+
+            console.log('[Bank] Withdraw Match - shop:', shopName, 'target:', targetName, 'amount:', amount);
+
+            if (isNaN(amount) || amount <= 0) continue;
+
+            // 대상이 유저인지 확인
+            const targetLower = targetName.toLowerCase();
+            const myNameLower = myName.toLowerCase();
+            const isTargetUser = targetLower === myNameLower ||
+                                 targetLower.includes(myNameLower) ||
+                                 myNameLower.includes(targetLower) ||
+                                 targetLower === '유저' || targetLower === 'user';
+
+            if (isTargetUser) {
+                // 유저가 무언가를 구매 -> 잔액 차감
+                if (balance >= amount) {
+                    console.log('[Bank] Processing withdrawal:', shopName, amount);
+                    balance -= amount;
+                    transactionHistory.unshift({
+                        id: Date.now(),
+                        type: 'expense',
+                        amount: amount,
+                        description: `${shopName}에서 결제`,
+                        timestamp: Date.now()
+                    });
+                    saveData();
+                    toastr.info(`💰 ${shopName}에서 ${formatAmount(amount)} 결제 (현재: ${formatAmount(balance)})`);
+                } else {
+                    toastr.warning(`💰 잔액 부족! ${shopName}에서 ${formatAmount(amount)} 결제 실패`);
+                }
+            }
+        }
+        // 잔액 패턴은 더 이상 파싱하지 않음 - 송금/출금만으로 잔액 자동 계산
     }
 
     // ========== UI ==========

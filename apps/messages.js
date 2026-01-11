@@ -24,6 +24,29 @@ window.STPhone.Apps.Messages = (function() {
         }
     }
 
+    // 송금/출금 태그를 예쁜 문자열로 변환 (화면 표시용)
+    function formatBankTagForDisplay(text) {
+        if (!text) return text;
+
+        // 송금 패턴: [💰 보내는사람 송금 받는사람: 금액]
+        // 예: [💰 ㅇㅇ 송금 잭: 2₩] → 💰 ㅇㅇ님이 잭님에게 2원을 송금했습니다.
+        text = text.replace(/\[💰\s*(.+?)\s+송금\s+(.+?)\s*[:\s：]+\s*[\$₩€¥£]?\s*([\d,]+)\s*[\$₩€¥£원]?\s*\]/gi,
+            (match, sender, receiver, amount) => {
+                return `💰 ${sender.trim()}님이 ${receiver.trim()}님에게 ${amount.trim()}원을 송금했습니다.`;
+            });
+
+        // 출금 패턴: [💰 가게이름 출금 유저: 금액]
+        text = text.replace(/\[💰\s*(.+?)\s+출금\s+(.+?)\s*[:\s：]+\s*[\$₩€¥£]?\s*([\d,]+)\s*[\$₩€¥£원]?\s*\]/gi,
+            (match, shop, user, amount) => {
+                return `💰 ${shop.trim()}에서 ${amount.trim()}원 결제`;
+            });
+
+        // 잔액 패턴: [💰 유저 잔액: 금액] - 숨김 처리
+        text = text.replace(/\[💰\s*.+?\s+잔액\s*[:\s：]+\s*[\$₩€¥£]?\s*[\d,]+\s*[\$₩€¥£원]?\s*\]/gi, '');
+
+        return text.trim();
+    }
+
     /**
      * AI 생성 함수 - 멀티턴 메시지 배열 지원
      * @param {string|Array} promptOrMessages - 단일 프롬프트 문자열 또는 메시지 배열 [{role, content}, ...]
@@ -302,6 +325,7 @@ window.STPhone.Apps.Messages = (function() {
                 flex-direction: column;
                 max-width: 100%;
                 width: fit-content;
+                min-width: 0; /* 부모 요소 때문에 찌그러지는 것 방지 */
             }
             .st-msg-wrapper.me {
                 align-self: flex-end;
@@ -330,13 +354,15 @@ window.STPhone.Apps.Messages = (function() {
 
             .st-msg-bubble {
                 max-width: 75%;
-                min-width: 40px;
+                min-width: fit-content; /* 내용물에 맞게 최소 너비 설정 */
+                width: auto; /* 너비를 자동으로 설정 */
                 padding: 10px 14px;
                 border-radius: 18px;
                 font-size: 15px;
                 line-height: 1.4;
                 word-wrap: break-word;
-                word-break: break-word;
+                word-break: keep-all; /* 한글이 멋대로 잘리는 것 방지 */
+                white-space: pre-wrap; /* 줄바꿈 규칙 최적화 */
                 position: relative;
                 display: inline-block;
             }
@@ -1050,8 +1076,12 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
         text,
         image: imageUrl,
         timestamp: Date.now(),
-        rpDate: rpDate || rpDateStr
+        rpDate: rpDate || rpDateStr,
+        // [NEW] 내가 보낸 메시지는 기본적으로 '안 읽음(false)' 상태
+        // 상대방 메시지는 받자마자 내가 읽은 것이므로 상관없으나, 통일성을 위해 true 처리 가능
+        read: sender === 'them' ? true : false
     };
+
 
     if (replyTo) {
         msgData.replyTo = replyTo;
@@ -1061,6 +1091,30 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
     saveAllMessages(all);
     return all[contactId].length - 1;
 }
+
+
+    // [NEW] 대화방의 내 모든 메시지를 '읽음' 처리 (1 없애기)
+    function markMessagesAsRead(contactId) {
+        const all = loadAllMessages();
+        if (!all[contactId]) return;
+
+        let changed = false;
+        all[contactId].forEach(msg => {
+            // 내가 보냈고, 아직 안 읽혔다면 -> 읽음 처리
+            if (msg.sender === 'me' && msg.read === false) {
+                msg.read = true;
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            saveAllMessages(all);
+            // 현재 보고 있는 화면이면 UI 즉시 갱신 (1 지우기)
+            $('.st-msg-unread-marker').fadeOut(200, function() { $(this).remove(); });
+            console.log(`📱 [Messages] Contact ${contactId}의 모든 메시지를 읽음 처리했습니다.`);
+        }
+    }
+
 
     // ========== 메시지 수정 (삭제 시 대체 텍스트로 변경) ==========
     function updateMessage(contactId, msgIndex, newText, isDeleted = false) {
@@ -1325,13 +1379,15 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
                 const side = 'them';
                 const clickAttr = `data-action="msg-option" data-idx="${newIdx}" data-line-idx="0" data-sender="${side}" class="st-msg-bubble ${side} clickable" style="cursor:pointer;" title="옵션 보기"`;
 
-                let bubbleContent = lineText;
+                // 송금/출금 태그 변환 적용
+                const displayLineText = formatBankTagForDisplay(lineText);
+                let bubbleContent = displayLineText;
                 if (translatedText) {
                     const displayMode = settings.translateDisplayMode || 'both';
                     if (displayMode === 'korean') {
                         bubbleContent = translatedText;
                     } else {
-                        bubbleContent = `<div class="st-msg-original">${lineText}</div><div class="st-msg-translation">${translatedText}</div>`;
+                        bubbleContent = `<div class="st-msg-original">${displayLineText}</div><div class="st-msg-translation">${translatedText}</div>`;
                     }
                 }
 
@@ -1390,16 +1446,29 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
             }
         }
 
+        // 채팅방 보고 있으면 말풍선 추가
+        if (isPhoneActive && isViewingThisChat) {
+            appendBubble('them', text, imageUrl, newIdx, translatedText, replyTo);
+        }
+
+        // 채팅방 안 보고 있을 때만 알림
         if (!isPhoneActive || !isViewingThisChat) {
             const unread = getUnreadCount(contactId) + 1;
             setUnreadCount(contactId, unread);
             updateMessagesBadge();
 
-            const previewText = translatedText || text;
-            const preview = imageUrl ? '사진' : (previewText?.substring(0, 50) || '새 메시지');
+            // 알림 미리보기 - 송금 태그는 간단하게 표시
+            let preview;
+            if (imageUrl) {
+                preview = '사진';
+            } else if (/\[💰.*송금.*:/.test(text)) {
+                preview = '💰 송금 알림';
+            } else if (/\[💰.*출금.*:/.test(text)) {
+                preview = '💰 결제 알림';
+            } else {
+                preview = (translatedText || text)?.substring(0, 50) || '새 메시지';
+            }
             showNotification(contactName, preview, contactAvatar, contactId, 'dm');
-        } else {
-            appendBubble('them', text, imageUrl, newIdx, translatedText, replyTo);
         }
     }
 
@@ -1546,12 +1615,21 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
             const msgs = allMsgs[c.id] || [];
             const last = msgs[msgs.length - 1];
             const unread = getUnreadCount(c.id);
+            // 미리보기 텍스트에 송금/출금 태그 변환 적용
+            let previewText = '새 대화';
+            if (last) {
+                if (last.image) {
+                    previewText = '사진';
+                } else if (last.text) {
+                    previewText = formatBankTagForDisplay(last.text);
+                }
+            }
             $list.append(`
                 <div class="st-thread-item" data-id="${c.id}" data-type="dm">
                     <img class="st-thread-avatar" src="${c.avatar || DEFAULT_AVATAR}" onerror="this.src='${DEFAULT_AVATAR}'">
                     <div class="st-thread-info">
                         <div class="st-thread-name">${c.name}</div>
-                        <div class="st-thread-preview">${last ? (last.image ? '사진' : last.text) : '새 대화'}</div>
+                        <div class="st-thread-preview">${previewText}</div>
                     </div>
                     <div class="st-thread-meta">
                         ${last ? `<div class="st-thread-time">${formatTime(last.timestamp)}</div>` : ''}
@@ -1724,30 +1802,26 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
         const $screen = window.STPhone.UI.getContentElement();
         $screen.empty();
 
-const msgs = getMessages(contactId);
+        const msgs = getMessages(contactId);
         const settings = window.STPhone.Apps?.Settings?.getSettings?.() || {};
         const timestamps = loadTimestamps(contactId);
         const customTimestamps = loadCustomTimestamps(contactId);
         const timestampMode = settings.timestampMode || 'none';
         let msgsHtml = '';
 
-/* 수정후 */
-        let lastRenderedRpDate = null;  // 렌더링용 마지막 날짜 추적
+        let lastRenderedRpDate = null;
 
         msgs.forEach((m, index) => {
-            // 커스텀 타임스탬프 표시 (해당 메시지 인덱스 전에 위치한 것들)
             const customTsForIndex = customTimestamps.filter(t => t.beforeMsgIndex === index);
             customTsForIndex.forEach(ts => {
                 msgsHtml += getCustomTimestampHtml(ts.text, ts.id);
             });
 
-            // [수정] 날짜 정보가 있고, 이전에 그린 날짜와 다를 때만 구분선 추가
             if (m.rpDate && m.rpDate !== lastRenderedRpDate) {
                 msgsHtml += getRpDateDividerHtml(m.rpDate);
-                lastRenderedRpDate = m.rpDate; // 방금 그린 날짜를 기억
+                lastRenderedRpDate = m.rpDate;
             }
 
-            // 타임스탬프/구분선 표시 체크
             if (timestampMode !== 'none') {
                 const tsData = timestamps.find(t => t.beforeMsgIndex === index);
                 if (tsData) {
@@ -1765,7 +1839,6 @@ const msgs = getMessages(contactId);
 
             const savedTranslation = (side === 'them') ? getTranslation(contactId, index) : null;
             const translateEnabled = settings.translateEnabled && side === 'them' && savedTranslation;
-            const displayMode = settings.translateDisplayMode || 'both';
 
             const isDeleted = m.isDeleted === true;
             const deletedClass = isDeleted ? ' deleted' : '';
@@ -1773,7 +1846,8 @@ const msgs = getMessages(contactId);
             const isExcluded = m.excludeFromContext === true;
             const excludedTag = isExcluded ? '<span class="st-msg-no-context">미반영</span>' : '';
 
-            msgsHtml += `<div class="st-msg-wrapper ${side}">`;
+            // 래퍼 시작
+            msgsHtml += `<div class="st-msg-wrapper ${side}" style="position: relative;">`;
 
             if (m.replyTo) {
                 msgsHtml += `<div class="st-msg-reply-preview">
@@ -1785,6 +1859,10 @@ const msgs = getMessages(contactId);
             if (m.image && !isDeleted) {
                 const imgAttr = `data-action="msg-option" data-idx="${index}" data-line-idx="0" data-sender="${side}" class="st-msg-bubble ${side} image-bubble clickable" style="cursor:pointer;" title="옵션 보기"`;
                 msgsHtml += `<div ${imgAttr}><img class="st-msg-image" src="${m.image}">${excludedTag}</div>`;
+
+                if (!m.text && settings.readReceiptEnabled && side === 'me' && m.read === false) {
+                     msgsHtml += `<span class="st-msg-unread-marker" style="bottom: 10px;">1</span>`;
+                }
             }
 
             if (m.text) {
@@ -1797,14 +1875,14 @@ const msgs = getMessages(contactId);
                     let lineIdx = 0;
 
                     lines.forEach((line, idx) => {
-                        const trimmed = line.trim();
+                        const trimmed = formatBankTagForDisplay(line.trim());
                         if(trimmed) {
                             let bubbleContent = '';
                             const lineAttr = `data-action="msg-option" data-idx="${index}" data-line-idx="${lineIdx}" data-sender="${side}" class="st-msg-bubble ${side} clickable" style="cursor:pointer;" title="옵션 보기"`;
 
                             if (translateEnabled) {
                                 const translatedLine = translatedLines[idx]?.trim();
-
+                                const displayMode = settings.translateDisplayMode || 'both';
                                 if (displayMode === 'korean' && translatedLine) {
                                     bubbleContent = translatedLine;
                                 } else if (translatedLine) {
@@ -1816,17 +1894,22 @@ const msgs = getMessages(contactId);
                                 bubbleContent = trimmed;
                             }
 
-                            msgsHtml += `<div ${lineAttr}>${bubbleContent}${lineIdx === 0 ? excludedTag : ''}</div>`;
+                            // 1 표시
+                            let unreadHtml = '';
+                            if (settings.readReceiptEnabled && side === 'me' && m.read === false && idx === lines.length - 1) {
+                                unreadHtml = `<span class="st-msg-unread-marker">1</span>`;
+                            }
+
+                            msgsHtml += `<div ${lineAttr}>${bubbleContent}${lineIdx === 0 ? excludedTag : ''}${unreadHtml}</div>`;
                             lineIdx++;
                         }
                     });
                 }
             }
 
-            msgsHtml += `</div>`;
+            msgsHtml += `</div>`; // Wrapper 끝
         });
 
-        // 마지막 메시지 이후에 추가된 커스텀 타임스탬프 표시
         const trailingTimestamps = customTimestamps.filter(t => t.beforeMsgIndex >= msgs.length);
         trailingTimestamps.forEach(ts => {
             msgsHtml += getCustomTimestampHtml(ts.text, ts.id);
@@ -1835,7 +1918,7 @@ const msgs = getMessages(contactId);
         $screen.append(`
             ${css}
             <div class="st-chat-screen">
-<div class="st-chat-header" style="position: relative;">
+                <div class="st-chat-header" style="position: relative;">
                     <button class="st-chat-back" id="st-chat-back">‹</button>
                     <div class="st-chat-contact">
                         <img class="st-chat-avatar" src="${contact.avatar || DEFAULT_AVATAR}" onerror="this.src='${DEFAULT_AVATAR}'">
@@ -1850,13 +1933,13 @@ const msgs = getMessages(contactId);
                     </div>
                 </div>
 
-<div class="st-chat-input-area">
-    <button class="st-chat-cam-btn" id="st-chat-cam"><i class="fa-solid fa-camera"></i></button>
-    <button class="st-chat-timestamp-btn" id="st-chat-timestamp" title="타임스탬프 추가"><i class="fa-regular fa-clock"></i></button>
-    <textarea class="st-chat-textarea" id="st-chat-input" placeholder="메시지" rows="1"></textarea>
-    ${settings.translateEnabled ? '<button class="st-chat-translate-user-btn" id="st-chat-translate-user" title="영어로 번역"><i class="fa-solid fa-language"></i></button>' : ''}
-    <button class="st-chat-send" id="st-chat-send"><i class="fa-solid fa-arrow-up"></i></button>
-</div>
+                <div class="st-chat-input-area">
+                    <button class="st-chat-cam-btn" id="st-chat-cam"><i class="fa-solid fa-camera"></i></button>
+                    <button class="st-chat-timestamp-btn" id="st-chat-timestamp" title="타임스탬프 추가"><i class="fa-regular fa-clock"></i></button>
+                    <textarea class="st-chat-textarea" id="st-chat-input" placeholder="메시지" rows="1"></textarea>
+                    ${settings.translateEnabled ? '<button class="st-chat-translate-user-btn" id="st-chat-translate-user" title="영어로 번역"><i class="fa-solid fa-language"></i></button>' : ''}
+                    <button class="st-chat-send" id="st-chat-send"><i class="fa-solid fa-arrow-up"></i></button>
+                </div>
 
                 <div class="st-photo-popup" id="st-photo-popup">
                     <div class="st-photo-box">
@@ -1873,8 +1956,6 @@ const msgs = getMessages(contactId);
 
         scrollToBottom();
         attachChatListeners(contactId, contact);
-
-        // 테마 앱의 배경 이미지 적용
         applyMessageBackground();
     }
 
@@ -1906,7 +1987,8 @@ const msgs = getMessages(contactId);
             const bubbleFontSize = messages.fontSize || 15;
 
             $('.st-msg-bubble').each(function() {
-                this.style.cssText += `max-width: ${bubbleWidth}% !important; border-radius: ${bubbleRadius}px !important; font-size: ${bubbleFontSize}px !important;`;
+                // width: auto와 word-break 설정을 추가하여 옆으로 길어지게 만듭니다.
+                this.style.cssText += `max-width: ${bubbleWidth}% !important; border-radius: ${bubbleRadius}px !important; font-size: ${bubbleFontSize}px !important; width: auto !important; min-width: fit-content !important; word-break: keep-all !important; white-space: pre-wrap !important;`;
             });
             $('.st-msg-bubble.me').each(function() {
                 this.style.cssText += `background: ${messages.myBubbleColor} !important; color: ${messages.myBubbleTextColor} !important; border-bottom-right-radius: 4px !important;`;
@@ -2232,6 +2314,13 @@ $('#st-chat-cam').on('click', () => {
         const $container = $('#st-chat-messages');
         const settings = window.STPhone.Apps?.Settings?.getSettings?.() || {};
 
+        // [NEW] 1(안읽음) 표시 HTML 생성
+        // 설정이 켜져있고, 내가 보낸 메시지인 경우에만 생성
+        const unreadHtml = (settings.readReceiptEnabled && sender === 'me')
+            ? '<span class="st-msg-unread-marker" style="position:absolute; left:-18px; bottom:2px; font-size:10px; color:#007aff; font-weight:bold;">1</span>'
+            : '';
+
+
         const clickAttr = (msgIndex !== undefined && msgIndex !== null)
             ? `data-action="msg-option" data-idx="${msgIndex}" data-sender="${side}" class="st-msg-bubble ${side} clickable" style="cursor:pointer;" title="옵션 보기"`
             : `class="st-msg-bubble ${side}"`;
@@ -2244,7 +2333,8 @@ $('#st-chat-cam').on('click', () => {
             </div>`;
         }
 
-        let wrapperHtml = `<div class="st-msg-wrapper ${side}">`;
+        // 래퍼(Wrapper) 시작 - CSS에서 position:relative를 주었으므로 절대위치(absolute)인 1이 잘 붙습니다.
+        let wrapperHtml = `<div class="st-msg-wrapper ${side}" style="position: relative;">`;
         wrapperHtml += replyHtml;
 
         if (imageUrl) {
@@ -2260,7 +2350,8 @@ $('#st-chat-cam').on('click', () => {
             const translatedLines = translatedText ? translatedText.split('\n') : [];
 
             lines.forEach((line, idx) => {
-                const trimmed = line.trim();
+                // 송금/출금 태그 변환 적용
+                const trimmed = formatBankTagForDisplay(line.trim());
                 if(trimmed) {
                     let bubbleContent = '';
 
@@ -2283,10 +2374,14 @@ $('#st-chat-cam').on('click', () => {
             });
         }
 
-        wrapperHtml += `</div>`;
+        // [NEW] 래퍼 닫기 직전에 '1' 표시 HTML 추가 (제일 마지막 버블 옆에 붙음)
+        wrapperHtml += unreadHtml;
+        wrapperHtml += `</div>`; // Wrapper 끝
+
         $container.find('#st-typing').before(wrapperHtml);
         scrollToBottom();
     }
+
 
 
     function appendGroupBubble(senderId, senderName, text, imageUrl) {
@@ -2605,9 +2700,10 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
         if (!contact) return;
 
         isGenerating = true;
-        // 앱이 열려있을 때만 UI 업데이트
+        window.STPhone.isPhoneGenerating = true;
+
         if ($('#st-typing').length) {
-            if ($('#st-typing').length) $('#st-typing').show();
+            $('#st-typing').show();
             scrollToBottom();
         }
 
@@ -2623,20 +2719,18 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
 
             const recentMessages = allMessages.map(m => `${myName}: ${m}`).join('\n');
 
-            // [NEW] 캘린더 기념일 정보만 가져오기 (날짜 출력 요청 X)
             let calendarEventsPrompt = '';
-            const Store = window.STPhone?.Apps?.Store;
-            if (Store && Store.isInstalled('calendar')) {
-                const Calendar = window.STPhone?.Apps?.Calendar;
-                if (Calendar && Calendar.isCalendarEnabled() && Calendar.getEventsOnlyPrompt) {
-                    calendarEventsPrompt = Calendar.getEventsOnlyPrompt() || '';
+            try {
+                const Store = window.STPhone?.Apps?.Store;
+                if (Store && Store.isInstalled('calendar')) {
+                    const Calendar = window.STPhone?.Apps?.Calendar;
+                    if (Calendar && Calendar.isCalendarEnabled && Calendar.getEventsOnlyPrompt) {
+                        calendarEventsPrompt = Calendar.getEventsOnlyPrompt() || '';
+                    }
                 }
-            }
+            } catch (e) {}
 
-            // [멀티턴 방식] 메시지 배열 구성
             const messages = [];
-
-            // 1. 시스템 프롬프트 (고정 컨텍스트)
             const systemContent = `### Character Info
 Name: ${contact.name}
 Personality: ${contact.persona || '(not specified)'}
@@ -2658,49 +2752,51 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
 
             messages.push({ role: 'system', content: systemContent });
 
-            // 2. 스토리 컨텍스트 - 원래 role 유지
             const ctx = window.SillyTavern?.getContext() || {};
             if (ctx.chat && ctx.chat.length > 0) {
                 const reverseChat = ctx.chat.slice().reverse();
-                const collectedMessages = [];
                 let currentTokens = 0;
-
                 for (const m of reverseChat) {
                     const msgContent = m.mes || '';
                     const estimatedTokens = Math.ceil(msgContent.length / 2.5);
-
-                    if (currentTokens + estimatedTokens > maxContextTokens) {
-                        break;
-                    }
-
-                    collectedMessages.unshift({
-                        role: m.is_user ? 'user' : 'assistant',
-                        content: msgContent
-                    });
+                    if (currentTokens + estimatedTokens > maxContextTokens) break;
+                    messages.push({ role: m.is_user ? 'user' : 'assistant', content: msgContent });
                     currentTokens += estimatedTokens;
                 }
-
-                messages.push(...collectedMessages);
             }
 
-            // 3. 연속으로 보낸 메시지들
             messages.push({ role: 'user', content: `[Rapid-fire messages from ${myName}]:\n${recentMessages}` });
 
-            // [NEW] 프리필이 있으면 assistant role로 추가 (AI가 이어서 작성)
             if (prefill) {
                 messages.push({ role: 'assistant', content: prefill });
             }
 
+            // [실행] AI 생성
             let result = await generateWithProfile(messages, maxContextTokens);
-            let replyText = String(result).trim();
+            let replyText = String(result || '').trim();
 
-            if (replyText.includes('[IGNORE]') || replyText.startsWith('[📩')) {
+            // [안읽씹 / 읽씹 로직]
+            if (replyText.includes('[UNREAD]')) {
+                console.log('📱 [Messages][Interrupt] 봇이 안읽씹(Unread) 선택');
+                addHiddenLog('System', `(System: The partner has not checked the message yet. Message remains 'Unread'.)`);
                 if ($('#st-typing').length) $('#st-typing').hide();
                 isGenerating = false;
+                window.STPhone.isPhoneGenerating = false;
+                return;
+            }
+
+            if (replyText.includes('[IGNORE]') || replyText.startsWith('[📩')) {
+                console.log('📱 [Messages][Interrupt] 봇이 읽씹(Ignore) 선택');
+                if (settings.readReceiptEnabled) markMessagesAsRead(contactId);
+                addHiddenLog('System', `(System: The partner read the message but decided not to reply.)`);
+                if ($('#st-typing').length) $('#st-typing').hide();
+                isGenerating = false;
+                window.STPhone.isPhoneGenerating = false;
                 return;
             }
 
             if (replyText) {
+                if (settings.readReceiptEnabled) markMessagesAsRead(contactId);
                 await receiveMessageSequential(contactId, replyText, contact.name, myName);
             }
 
@@ -2709,6 +2805,7 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
         }
 
         isGenerating = false;
+        window.STPhone.isPhoneGenerating = false; // 플래그 해제
         if ($('#st-typing').length) $('#st-typing').hide();
     }
 
@@ -2746,13 +2843,10 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
         if (!contact) return;
 
         isGenerating = true;
-
-        // [NEW] 폰 앱에서 생성 중임을 표시 (index.js가 캘린더 날짜 프롬프트 주입 안 하도록)
         window.STPhone.isPhoneGenerating = true;
 
-        // 앱이 열려있을 때만 UI 업데이트
         if ($('#st-typing').length) {
-            if ($('#st-typing').length) $('#st-typing').show();
+            $('#st-typing').show();
             scrollToBottom();
         }
 
@@ -2767,10 +2861,8 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
             const systemPrompt = settings.smsSystemPrompt || getDefaultSystemPrompt();
             const prefill = settings.prefill || '';
             const myName = getUserName();
-
             const maxContextTokens = settings.maxContextTokens || 4096;
 
-            // [NEW] 캘린더 기념일 안전하게 가져오기 (오류나면 무시)
             let calendarEventsPrompt = '';
             try {
                 const Store = window.STPhone?.Apps?.Store;
@@ -2781,11 +2873,8 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
                         if (eventTxt) calendarEventsPrompt = eventTxt;
                     }
                 }
-            } catch (calErr) {
-                console.warn('[Messages] 캘린더 프롬프트 로드 실패(무시됨):', calErr);
-            }
+            } catch (calErr) {}
 
-            // [NEW] 은행 잔액 프롬프트 가져오기
             let bankPrompt = '';
             try {
                 const Store = window.STPhone?.Apps?.Store;
@@ -2795,14 +2884,11 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
                         bankPrompt = Bank.generateBankSystemPrompt() || '';
                     }
                 }
-            } catch (bankErr) {
-                console.warn('[Messages] 은행 프롬프트 로드 실패(무시됨):', bankErr);
-            }
+            } catch (bankErr) {}
 
-            // [멀티턴 방식] 메시지 배열 구성
             const messages = [];
 
-            // 1. 시스템 프롬프트 (고정 컨텍스트)
+            // 1. 기본 시스템 정보 (안읽씹 내용 없음)
             const systemContent = `### Character Info
 Name: ${contact.name}
 Personality: ${contact.persona || '(not specified)'}
@@ -2817,43 +2903,55 @@ ${bankPrompt}
 
 ### Instructions
 You are ${contact.name} responding to a text message from ${myName}.
-Reply naturally based on the conversation history above.`;
+Reply naturally based on the conversation history below.`;
 
             messages.push({ role: 'system', content: systemContent });
 
-            // 2. 스토리 컨텍스트 - 원래 role 유지
+            // 2. 히스토리 (과거 -> 최신)
             const ctx = window.SillyTavern?.getContext() || {};
             if (ctx.chat && ctx.chat.length > 0) {
-                const reverseChat = ctx.chat.slice().reverse();
-                const collectedMessages = [];
                 let currentTokens = 0;
+                const tempHistory = [];
 
-                for (const m of reverseChat) {
+                for (let i = ctx.chat.length - 1; i >= 0; i--) {
+                    const m = ctx.chat[i];
                     const msgContent = m.mes || '';
                     const estimatedTokens = Math.ceil(msgContent.length / 2.5);
 
-                    if (currentTokens + estimatedTokens > maxContextTokens) {
-                        break;
-                    }
+                    if (currentTokens + estimatedTokens > maxContextTokens) break;
 
-                    collectedMessages.unshift({
+                    tempHistory.push({
                         role: m.is_user ? 'user' : 'assistant',
                         content: msgContent
                     });
                     currentTokens += estimatedTokens;
                 }
-
-                messages.push(...collectedMessages);
+                // 역순으로 가져온 걸 다시 뒤집어서(과거->최신) 배열에 추가
+                messages.push(...tempHistory.reverse());
             }
 
-            // 3. 현재 유저의 문자 메시지
+            // 3. [핵심] 안읽씹/읽씹 지령 (히스토리 끝나고, 유저 말 직전에 주입)
+            if (settings.readReceiptEnabled) {
+                // system role로 한번 더 강조하여 보냄 (AI가 가장 최근 지시로 인식함)
+                messages.push({
+                    role: 'system',
+
+                    content: `[IMPORTANT INSTRUCTION]
+1. [UNREAD(안읽씹)]: If appropriate based on context (busy/sleeping/angry), you MUST reply ONLY with: [UNREAD]
+2. [IGNORE(읽씹)]: If you read the message but will NOT reply, reply ONLY with: [IGNORE]
+3. Otherwise, reply normally with text.
+(Do not output explanation, just the tag if needed)`
+                });
+            }
+
+            // 4. 유저 메시지
             let userMsgContent = `[Text Message from ${myName}]: ${userText}`;
             if (userReplyInfo) {
                 userMsgContent = `[Text Message from ${myName}] (Replying to "${userReplyInfo.previewText}"): ${userText}`;
             }
             messages.push({ role: 'user', content: userMsgContent });
 
-            // [NEW] 프리필이 있으면 assistant role로 추가 (AI가 이어서 작성)
+            // 5. 프리필
             if (prefill) {
                 messages.push({ role: 'assistant', content: prefill });
             }
@@ -2861,13 +2959,32 @@ Reply naturally based on the conversation history above.`;
             let result = await generateWithProfile(messages, maxContextTokens);
             let replyText = String(result).trim();
 
-            if (replyText.includes('[IGNORE]') || replyText.startsWith('[📩')) {
+            // [안읽씹 로직]
+            if (replyText.includes('[UNREAD]')) {
+                console.log('📱 [Messages] 봇이 안읽씹(Unread) 선택');
+                addHiddenLog('System', `(System: The partner has not checked the message yet. Message remains 'Unread'.)`);
                 if ($('#st-typing').length) $('#st-typing').hide();
                 isGenerating = false;
+                window.STPhone.isPhoneGenerating = false;
                 return;
             }
 
-            // [NEW] 은행 송금 패턴 파싱
+            // [읽씹 로직]
+            if (replyText.includes('[IGNORE]') || replyText.startsWith('[📩')) {
+                 console.log('📱 [Messages] 봇이 읽씹(Ignore) 선택');
+                 if (settings.readReceiptEnabled) markMessagesAsRead(contactId);
+                 addHiddenLog('System', `(System: The partner read the message but decided not to reply.)`);
+                 if ($('#st-typing').length) $('#st-typing').hide();
+                 isGenerating = false;
+                 window.STPhone.isPhoneGenerating = false;
+                 return;
+            }
+
+            // [일반 답장]
+            if (replyText) {
+                if (settings.readReceiptEnabled) markMessagesAsRead(contactId);
+            }
+
             try {
                 const Store = window.STPhone?.Apps?.Store;
                 if (Store && typeof Store.isInstalled === 'function' && Store.isInstalled('bank')) {
@@ -2876,9 +2993,7 @@ Reply naturally based on the conversation history above.`;
                         Bank.parseTransferFromResponse(replyText, contact.name);
                     }
                 }
-            } catch (bankErr) {
-                console.warn('[Messages] 송금 파싱 실패(무시됨):', bankErr);
-            }
+            } catch (bankErr) {}
 
             const imgMatch = replyText.match(/\[IMG:\s*([^\]]+)\]/i);
             if (imgMatch) {
@@ -2891,7 +3006,8 @@ Reply naturally based on the conversation history above.`;
                     receiveMessage(contactId, '', imgUrl);
                     addHiddenLog(contact.name, `[📩 ${contact.name} -> ${myName}]: (Photo: ${imgPrompt}) ${replyText}`);
                     if ($('#st-typing').length) $('#st-typing').hide();
-                    isGenerating = false; // 종료 상태 처리 추가
+                    isGenerating = false;
+                    window.STPhone.isPhoneGenerating = false;
                     return;
                 }
             }
@@ -2936,9 +3052,10 @@ Reply naturally based on the conversation history above.`;
         }
 
         isGenerating = false;
-        window.STPhone.isPhoneGenerating = false; // [NEW] 플래그 해제
+        window.STPhone.isPhoneGenerating = false;
         if ($('#st-typing').length) $('#st-typing').hide();
     }
+
 
     // ========== 송금 후 AI 답장 생성 ==========
     async function generateTransferReply(contactId, contactName, amount, memo = '') {
@@ -3077,6 +3194,9 @@ Keep the response brief and natural like a real text message.`;
         if ($('#st-typing').length) $('#st-typing').show();
         scrollToBottom();
 
+        // [수정] 폰 생성 플래그 켜기 (날짜 프롬프트 차단)
+        window.STPhone.isPhoneGenerating = true;
+
         try {
             const settings = window.STPhone.Apps?.Settings?.getSettings?.() || {};
             const myName = getUserName();
@@ -3171,6 +3291,8 @@ Personality: ${settings.userPersonality || '(not specified)'}
             toastr.error('그룹 답장 생성 실패');
         }
 
+        // [수정] 폰 생성 플래그 끄기
+        window.STPhone.isPhoneGenerating = false;
         if ($('#st-typing').length) $('#st-typing').hide();
     }
 
@@ -3185,12 +3307,12 @@ Personality: ${settings.userPersonality || '(not specified)'}
         return ctx?.name1 || 'User';
     }
 
-    function getDefaultSystemPrompt() {
+            function getDefaultSystemPrompt() {
         const settings = window.STPhone.Apps?.Settings?.getSettings?.() || {};
         if (settings.smsSystemPrompt) {
             return settings.smsSystemPrompt;
         }
-        return `[System] You are {{char}} texting {{user}}. Stay in character.
+        return `[System] You are Char texting User. Stay in character.
 - Write SMS-style: short, casual, multiple messages separated by line breaks
 - No narration, no prose, no quotation marks
 - DO NOT use flowery language. DO NOT output character name prefix.
@@ -3199,12 +3321,9 @@ Personality: ${settings.userPersonality || '(not specified)'}
 ### 📷 PHOTO REQUESTS
 To send a photo, reply with: [IMG: vivid description of photo content]
 
-### 🚫 IGNORING (Ghosting)
-If you don't want to reply (angry, busy, indifferent, asleep), reply ONLY: [IGNORE]
-
 ### 📞 CALL INITIATION
 To start a voice call, append [call to user] at the very end.
-NEVER decide {{user}}'s reaction. Just generate the tag and stop.
+NEVER decide User's reaction. Just generate the tag and stop.
 
 ### ↩️ REPLY TO MESSAGE
 To reply to the user's last message specifically, prepend [REPLY] at the start of your message.
@@ -3212,6 +3331,7 @@ To reply to the user's last message specifically, prepend [REPLY] at the start o
 ### OUTPUT
 Write the next SMS response only. No prose. No quotation marks. No character name prefix.`;
     }
+
 
 // ========== 번역 기능 (SillyTavern 백엔드 API 사용) ==========
 // overridePrompt 인자를 추가하여 번역 방향을 바꿀 수 있게 합니다.
@@ -4439,6 +4559,8 @@ ${modeHint}
         const debugId = Date.now();
         const startedAt = performance?.now?.() || 0;
         isGenerating = true;
+        // [수정] 폰 생성 플래그 켜기
+        window.STPhone.isPhoneGenerating = true;
 
         try {
             const settings = window.STPhone.Apps?.Settings?.getSettings?.() || {};
@@ -4564,6 +4686,8 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
         } finally {
             const elapsedMs = (performance?.now?.() || 0) - startedAt;
             isGenerating = false;
+            // [수정] 폰 생성 플래그 끄기
+            window.STPhone.isPhoneGenerating = false;
             console.debug('📱 [Proactive] generate end', { debugId, elapsedMs: Math.round(elapsedMs), isGenerating });
         }
     }

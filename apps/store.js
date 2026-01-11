@@ -400,6 +400,16 @@ window.STPhone.Apps.Store = (function() {
             version: '1.0.0',
             size: '0.6 MB',
             icon: '💰'
+        },
+        {
+            id: 'streaming',
+            name: '플링',
+            bg: 'linear-gradient(135deg, #9146ff, #772ce8)',
+            category: '엔터테인먼트',
+            description: '라이브 스트리밍 앱! 방송을 시작하고 AI 시청자들과 소통하세요. 후원을 받으면 은행에 자동 입금됩니다.',
+            version: '1.0.0',
+            size: '0.7 MB',
+            icon: '📺'
         }
     ];
 
@@ -749,6 +759,9 @@ window.STPhone.Apps.Store = (function() {
                 break;
             case 'bank':
                 Apps.Bank?.open();
+                break;
+            case 'streaming':
+                Apps.Streaming?.open();
                 break;
             default:
                 toastr.warning('앱을 찾을 수 없습니다.');

@@ -51,6 +51,7 @@ const EXTENSION_NAME = 'ST Phone System';
             await loadModule('apps/store-apps/calendar.js');
             await loadModule('apps/store-apps/theme.js');
             await loadModule('apps/store-apps/bank.js');
+            await loadModule('apps/store-apps/streaming.js');
 
 
 
@@ -228,6 +229,7 @@ const EXTENSION_NAME = 'ST Phone System';
             /^\s*\[ts:/i,          // [NEW] 타임스탬프 로그 숨기기
             /^\s*\[⏰/i,           // [NEW] 타임스탬프 로그 숨기기 (Time Skip)
             /^\s*\[💰/i,          // [NEW] 은행 송금/잔액 로그 숨기기 (시작 부분)
+            /^\s*\[📺/i,          // [NEW] Fling 스트리밍 로그 숨기기
         ];
 
         // 패턴 중 하나라도 맞으면 CSS 숨김 클래스 부여
@@ -396,10 +398,91 @@ const EXTENSION_NAME = 'ST Phone System';
     }
 
     function injectCalendarPrompt(data) {
-        // [NEW] 폰 앱(문자/전화)에서 AI 생성 중이면 주입 안 함
-        // 폰 앱은 자체적으로 getEventsOnlyPrompt()를 사용함
+        // ==========================================================
+        // [수정됨] 폰/전화 사용 감지 및 기념일/프리필 처리 (순서 및 중복 해결)
+        // ==========================================================
+        let skipDatePrompt = false;
+        let isHangUpSituation = false; // 전화 끊음 상황인지 별도 체크
+
+        // 1. 폰 앱(문자/전화)이 자체적으로 생성 중인지 확인
         if (window.STPhone?.isPhoneGenerating) {
-            console.log(`📅 [${EXTENSION_NAME}] Calendar prompt skipped (phone app is generating)`);
+            skipDatePrompt = true;
+        }
+
+        // 2. 전화 끊음/거절 시스템 메시지인지 확인 (메인 채팅)
+        if (!skipDatePrompt && data && data.chat && data.chat.length > 0) {
+            const lastMsg = data.chat[data.chat.length - 1];
+            // 메시지 내용 안전하게 가져오기
+            const text = lastMsg.mes || lastMsg.content || '';
+
+            const phoneKeywords = ['hung up', 'disconnected', 'rejected', 'declined', 'call ended', '전화', '통화', '끊음', '거절', '종료'];
+            // 대괄호 [ ] 나 소괄호 ( ) 로 시작하는지 확인 (시스템 메시지 특징)
+            const isSystemMsg = /^[\[\(]/.test(text);
+            const hasPhoneKeyword = phoneKeywords.some(keyword => text.toLowerCase().includes(keyword.toLowerCase()));
+
+            if (isSystemMsg && hasPhoneKeyword) {
+                skipDatePrompt = true;
+                isHangUpSituation = true; // 프리필 주입을 위해 플래그 켜기
+            }
+        }
+
+        // 3. 폰 사용 중이거나 전화 끊음 메시지라면? -> 날짜는 빼고 처리
+        if (skipDatePrompt) {
+            // (1) 기념일/일정 정보만 쏙 가져오기 (날짜 제외)
+            const eventPrompt = window.STPhone?.Apps?.Calendar?.getEventsOnlyPrompt?.();
+
+            // (2) 전화 끊음 상황이고 프리필 설정이 있다면 주입 (기념일보다 나중에 와야 함)
+            // 주의: data.chat에 push하면 맨 뒤에 붙으므로, 기념일 넣기 전에 미리 위치를 잡아두거나,
+            // 기념일을 넣고 나서 그 뒤에 넣어야 합니다. 여기서는 순차적으로 처리합니다.
+
+            // 먼저 기념일 주입 시도
+            if (eventPrompt && data && Array.isArray(data.chat)) {
+                // [중복 방지] 이미 메시지 내역(시스템 프롬프트 등)에 기념일 내용이 포함되어 있다면 추가하지 않음
+                const isAlreadyIncluded = data.chat.some(msg => msg.content && msg.content.includes(eventPrompt));
+
+                if (!isAlreadyIncluded) {
+                    console.log(`📅 [ST Phone] 날짜는 빼고 '기념일'만 주입: ${eventPrompt}`);
+
+                    // [순서 보정] 마지막 메시지가 'assistant'(프리필)라면 그보다 '앞'에 넣어야 함
+                    const lastMsg = data.chat[data.chat.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant') {
+                        // 프리필 바로 앞에 삽입 (splice 사용)
+                        data.chat.splice(data.chat.length - 1, 0, {
+                            role: 'system',
+                            content: eventPrompt
+                        });
+                    } else {
+                        // 프리필이 없으면 맨 뒤에 추가
+                        data.chat.push({
+                            role: 'system',
+                            content: eventPrompt
+                        });
+                    }
+                } else {
+                    console.log(`📅 [ST Phone] 기념일 정보가 이미 포함되어 있어 주입을 건너뜁니다.`);
+                }
+            }
+
+            // (3) 전화 끊음 상황일 때 프리필 주입 (가장 마지막에 와야 함)
+            if (isHangUpSituation) {
+                const settings = window.STPhone?.Apps?.Settings?.getSettings?.() || {};
+                if (settings.prefill) {
+                    console.log(`📞 [ST Phone] 전화 끊음 감지 -> 프리필 주입: ${settings.prefill}`);
+                    data.chat.push({
+                        role: 'assistant',
+                        content: settings.prefill
+                    });
+                }
+            }
+
+            console.log(`📅 [ST Phone] 기본 날짜 형식([YYYY년...])은 생략합니다.`);
+            return; // 여기서 함수 종료! (아래의 기본 날짜 프롬프트 실행 안 됨)
+        }
+        // ==========================================================
+
+        // [추가됨] 방송(Streaming) 중이면 캘린더 날짜 프롬프트 주입 스킵
+        if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
+            console.log('📅 [ST Phone] Streaming is active - Skipping Calendar prompt injection');
             return;
         }
 
@@ -428,13 +511,21 @@ const EXTENSION_NAME = 'ST Phone System';
         }
 
         // [NEW] 은행 앱 프롬프트도 주입
-        injectBankPrompt(data);
+        if (typeof injectBankPrompt === 'function') {
+            injectBankPrompt(data);
+        }
     }
 
     // [NEW] 은행 프롬프트 주입 함수
     function injectBankPrompt(data) {
         // 폰 앱에서 생성 중이면 스킵 (문자앱은 자체적으로 처리함)
         if (window.STPhone?.isPhoneGenerating) {
+            return;
+        }
+
+        // [추가됨] 방송(Streaming) 중이면 은행 프롬프트 주입 스킵
+        if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
+            console.log('📺 [ST Phone] Streaming is active - Skipping Bank prompt injection');
             return;
         }
 

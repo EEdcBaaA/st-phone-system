@@ -715,7 +715,7 @@
         max-height: calc(100dvh - 100px) !important;
         overflow-y: auto !important;
     }
-    
+
     /* 앱 내부 화면들도 하단 여백 확보 */
     .st-settings-app,
     .st-messages-app,
@@ -729,7 +729,7 @@
         max-height: 100dvh !important;
         overflow-y: auto !important;
     }
-    
+
     /* 홈 그리드도 하단 여백 */
     .st-home-grid {
         padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
@@ -882,4 +882,20 @@
     border-radius: 10px;
     vertical-align: middle;
     white-space: nowrap;
+}
+
+/* [NEW] 읽지 않음(1) 표시 스타일 */
+.st-msg-unread-marker {
+    position: absolute;
+    left: -16px; /* 버블 왼쪽 */
+    bottom: 2px;
+    font-size: 10px;
+    color: #007aff; /* 내 말풍선 파란색 */
+    font-weight: bold;
+    /* text-shadow는 삭제함 */
+}
+
+/* 그룹챗이나 상대방 메시지엔 안 뜸. 내 메시지(.me) 기준 위치 조정 */
+.st-msg-wrapper.me {
+    position: relative; /* 마커 위치 기준점 */
 }

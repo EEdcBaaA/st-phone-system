@@ -46,20 +46,27 @@ Text to translate:`,
         branchCopyRecords: false,
 
         // ========== 프롬프트 설정 (새로 추가) ==========
-        // [문자 앱 프롬프트]
-        smsSystemPrompt: `[System] You are {{char}} texting {{user}}. Stay in character.
+                // [AI 동작 설정] 부분에 아래 한 줄 추가
+        readReceiptEnabled: true, // [NEW] 읽음 확인 기능 (1 표시)
+
+        // [문자 앱 프롬프트] - 프롬프트 로직 강화
+        smsSystemPrompt: `[System] You are Veda texting User. Stay in character.
 - Write SMS-style: short, casual, multiple messages separated by line breaks
 - No narration, no prose, no quotation marks
 - DO NOT use flowery language. DO NOT output character name prefix.
-- may use: emojis, slang, abbreviations, typo, and internet speak
+
+### 👓 READ RECEIPT STATUS (IMPORTANT)
+User's message is on your phone notification screen. Decide your action:
+1. **REPLY:** To read and reply, simply write your message text.
+2. **READ & IGNORE (읽씹):** To read but NOT reply (ghosting/angry), output ONLY: [IGNORE]
+3. **DO NOT READ (안읽씹):** If you are asleep, busy, or avoiding the phone, output ONLY: [UNREAD]
+   (If you output [UNREAD], the user will see '1' next to their message, meaning you haven't checked it.)
 
 ### 📷 PHOTO REQUESTS
 To send a photo, reply with: [IMG: vivid description of photo content]
 
-### 🚫 IGNORING (Ghosting)
-If you don't want to reply (angry, busy, indifferent, asleep), reply ONLY: [IGNORE]
-
 ### 📞 CALL INITIATION
+
 To start a voice call, append [call to user] at the very end.
 NEVER decide {{user}}'s reaction. Just generate the tag and stop.
 
@@ -579,14 +586,24 @@ function saveToStorage() {
                     <div id="tab-ai" class="st-tab-page" style="display:none;">
                         <div class="st-section">
                             <div class="st-row">
-                                <div>
-                                    <span class="st-label">채팅 연동 (Sync)</span>
-                                    <div class="st-desc">채팅방 대화를 폰 문자로 가져오기</div>
-                                </div>
-                                <input type="checkbox" class="st-switch" id="st-set-sync">
-                            </div>
+    <div>
+        <span class="st-label">채팅 연동 (Sync)</span>
+        <div class="st-desc">채팅방 대화를 폰 문자로 가져오기</div>
+    </div>
+    <input type="checkbox" class="st-switch" id="st-set-sync">
+</div>
+
+<!-- [NEW] 읽음 확인 설정 추가 -->
+<div class="st-row">
+    <div>
+        <span class="st-label">읽음 확인 (숫자 1)</span>
+        <div class="st-desc">문자 읽씹/안읽씹 시뮬레이션</div>
+    </div>
+    <input type="checkbox" class="st-switch" id="st-set-read-receipt">
+</div>
 
 <div class="st-row-block">
+
     <span class="st-label">Prefill (시작 문구)</span>
     <span class="st-desc">AI 대답을 이 문구로 시작하게 합니다.</span>
     <input type="text" class="st-textarea" id="st-set-prefill" placeholder="예: (blushes) ">
@@ -1107,7 +1124,9 @@ function saveToStorage() {
 // AI
         /* 수정 후 (loadValuesToUI 함수 안 - 아래줄 추가) */
 $('#st-set-sync').prop('checked', currentSettings.chatToSms);
+$('#st-set-read-receipt').prop('checked', currentSettings.readReceiptEnabled !== false); // [NEW] 로드
 $('#st-set-prefill').val(currentSettings.prefill);
+
 $('#st-set-timestamp-mode').val(currentSettings.timestampMode || 'none');
 $('#st-set-max-tokens').val(currentSettings.maxContextTokens || 4096);
 
@@ -1346,6 +1365,8 @@ $('#st-set-profile-global').on('change', function() {
 
         // AI 설정 저장
 $('#st-set-sync').on('change', function() { currentSettings.chatToSms = $(this).is(':checked'); saveToStorage(); });
+// [NEW] 리스너 추가
+$('#st-set-read-receipt').on('change', function() { currentSettings.readReceiptEnabled = $(this).is(':checked'); saveToStorage(); });
 $('#st-set-prefill').on('input', function() { currentSettings.prefill = $(this).val(); saveToStorage(); });
 $('#st-set-timestamp-mode').on('change', function() { currentSettings.timestampMode = $(this).val(); saveToStorage(); });
 $('#st-set-max-tokens').on('input', function() { currentSettings.maxContextTokens = parseInt($(this).val()) || 4096; saveToStorage(); });
