@@ -1516,12 +1516,18 @@ Decide TWO things:
                     const roll = Math.random() * 100;
                     const shouldAttemptPost = roll < chance;  // <= 에서 < 로 변경 (0% 엣지케이스 방지)
                     
+                    console.log('[Instagram] 확률 체크:', { roll: roll.toFixed(2), chance, shouldAttemptPost, aiShouldPost: result.newPost.shouldPost });
+                    
                     // 중복 캡션 체크
                     const captionKey = result.newPost.caption?.trim().toLowerCase();
                     const isDuplicate = captionKey && recentPostCaptions.has(captionKey);
                     
                     if (isDuplicate) {
                         console.log('[Instagram] 중복 캡션 감지, 포스팅 스킵:', captionKey);
+                    }
+                    
+                    if (!shouldAttemptPost) {
+                        console.log('[Instagram] 확률 실패 - 포스팅 스킵 (roll=' + roll.toFixed(2) + ' >= chance=' + chance + ')');
                     }
                     
                     if (shouldAttemptPost && result.newPost.shouldPost && !isDuplicate) {
