@@ -1233,19 +1233,17 @@ Only use the transfer/withdrawal formats above.`;
                     <button class="st-bank-modal-btn confirm" id="st-bank-apply-initial">초기 자금 설정</button>
                 </div>
             </div>
-            ` : ''}
-
+            ` : `
             <div class="st-bank-section">
-                <div class="st-bank-section-title" style="margin-bottom:15px;">📊 잔액 수동 조정</div>
+                <div class="st-bank-section-title" style="margin-bottom:15px;">💰 초기 자금 설정 완료</div>
                 <div class="st-bank-item" style="flex-direction:column;align-items:stretch;gap:12px;">
-                    <div style="font-size:12px;color:var(--pt-sub-text);margin-bottom:5px;">
-                        디버그 용도로만 사용하세요. 거래 내역에 기록되지 않습니다.
+                    <div style="font-size:13px;color:var(--pt-sub-text);text-align:center;padding:15px;">
+                        ✅ 초기 자금이 이미 설정되었습니다.<br>
+                        이후로는 송금/출금으로만 잔액이 변동됩니다.
                     </div>
-                    <input type="number" class="st-bank-modal-input" id="st-bank-set-balance"
-                           value="${balance}" placeholder="새 잔액 입력" style="margin:0;">
-                    <button class="st-bank-modal-btn confirm" id="st-bank-apply-balance">수동 조정</button>
                 </div>
             </div>
+            `}
 
             <div class="st-bank-section">
                 <div class="st-bank-section-title" style="margin-bottom:15px;">데이터 관리</div>
@@ -1276,17 +1274,6 @@ Only use the transfer/withdrawal formats above.`;
                 renderTab('settings'); // 화면 새로고침 (초기 자금 섹션 숨김)
             } else {
                 toastr.warning('올바른 금액을 입력하세요.');
-            }
-        });
-
-        // 수동 잔액 조정 버튼
-        $('#st-bank-apply-balance').on('click', () => {
-            const newBalance = parseInt($('#st-bank-set-balance').val());
-            if (!isNaN(newBalance)) {
-                balance = newBalance;
-                saveData();
-                updateBalanceDisplay();
-                toastr.success('잔액이 수동 조정되었습니다.');
             }
         });
 

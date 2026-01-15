@@ -421,8 +421,20 @@ window.STPhone.Apps.Store = (function() {
             version: '1.0.0',
             size: '1.5 MB',
             icon: '<i class="fa-brands fa-instagram" style="font-size: 28px; color: white;"></i>'
-        }
+        },
         // #IG_END
+        // #GIFTS_START - 선물하기 앱 등록
+        {
+            id: 'gifts',
+            name: '선물하기',
+            bg: 'linear-gradient(135deg, #FF6B6B, #FF8E53)',
+            category: '쇼핑',
+            description: '연락처의 친구들에게 선물을 보내세요! 명품, 테무, 스타벅스 등 다양한 브랜드가 있어요.',
+            version: '1.0.0',
+            size: '0.4 MB',
+            icon: '🎁'
+        }
+        // #GIFTS_END
     ];
 
     let installedApps = [];
@@ -777,6 +789,9 @@ window.STPhone.Apps.Store = (function() {
                 break;
             case 'instagram':
                 Apps.Instagram?.open();
+                break;
+            case 'gifts':
+                Apps.Gifts?.open();
                 break;
             default:
                 toastr.warning('앱을 찾을 수 없습니다.');

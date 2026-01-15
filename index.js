@@ -53,6 +53,7 @@ const EXTENSION_NAME = 'ST Phone System';
             await loadModule('apps/store-apps/bank.js');
             await loadModule('apps/store-apps/streaming.js');
             await loadModule('apps/store-apps/instagram.js');
+            await loadModule('apps/store-apps/gifts.js');
 
 
 
@@ -70,7 +71,13 @@ const EXTENSION_NAME = 'ST Phone System';
                 });
             }
 
-            // 6.5. 테마 앱 자동 초기화 (저장된 테마 불러오기)
+            // 6.5. Settings 앱 초기화 (설정 로드 및 이벤트 발생)
+            if (window.STPhone.Apps && window.STPhone.Apps.Settings) {
+                window.STPhone.Apps.Settings.init();
+                console.log(`📱 [${EXTENSION_NAME}] Settings initialized`);
+            }
+
+            // 6.6. 테마 앱 자동 초기화 (저장된 테마 불러오기)
             if (window.STPhone.Apps && window.STPhone.Apps.Theme) {
                 window.STPhone.Apps.Theme.init();
             }
@@ -129,15 +136,23 @@ const EXTENSION_NAME = 'ST Phone System';
     }
 
     $(document).ready(function() {
+        // [NEW] CSS 스타일 먼저 주입
+        injectLogStyles();
+
         setTimeout(initialize, 500);
 
-        // 메인 채팅 감시자 실행
-       // 수정후 코드
-        // 메인 채팅 감시자 실행
-        setupChatObserver();
+        // 메인 채팅 감시자 실행 - initialize 완료 후 실행되도록 딜레이
+        setTimeout(setupChatObserver, 1000);
 
         // 캘린더 프롬프트 주입 이벤트 리스너
         setupCalendarPromptInjector();
+
+        // [수정됨] 설정 변경 이벤트 리스너 (로그 표시 토글용)
+        $(document).on('stPhoneSettingsChanged', function(e, settings) {
+            console.log('📱 [Index] Settings changed, showPhoneLogs:', settings.showPhoneLogs);
+            // Settings 모듈에서 이미 applyLogVisibility() 호출하므로 여기선 마킹만
+            applyHideLogicToAll();
+        });
     });
 
     // 감시자 함수 정의
@@ -145,12 +160,34 @@ const EXTENSION_NAME = 'ST Phone System';
    수정후 코드 (index.js 하단부를 이걸로 완전히 교체하세요)
    ============================================================== */
 
+    // [NEW] CSS 스타일 주입 (로그 표시/숨김용)
+    function injectLogStyles() {
+        if ($('#st-phone-log-styles').length) return;
+
+        const css = `
+            <style id="st-phone-log-styles">
+                /* 기본: 폰 로그 숨김 */
+                .st-phone-hidden-log {
+                    display: none !important;
+                }
+                /* body에 클래스가 있으면 표시 */
+                body.st-show-phone-logs .st-phone-hidden-log {
+                    display: flex !important;
+                }
+            </style>
+        `;
+        $('head').append(css);
+    }
+
     // [중요] 페이지 로드 시 기존 메시지도 검사하기 위해 Observer 시작 전 스캔 실행
     function applyHideLogicToAll() {
         const messages = document.querySelectorAll('.mes');
+
         messages.forEach(node => {
-            hideSystemLogs(node); // 이미 있는 메시지 숨기기
+            hideSystemLogs(node); // 이미 있는 메시지에 클래스 마킹
         });
+
+        console.log('📱 [Index] applyHideLogicToAll 완료, 마킹된 로그 수:', $('.st-phone-hidden-log').length);
     }
 
     // 감시자 함수 정의 (Observer)
@@ -185,35 +222,42 @@ const EXTENSION_NAME = 'ST Phone System';
 
     // [신규 기능] 폰 로그인지 검사하고 숨겨주는 함수
     function hideSystemLogs(node) {
-        // 이미 처리된 건 스킵
-        if (node.classList.contains('st-phone-hidden-log')) return;
-        if (node.classList.contains('st-phone-log-processed')) return;
+        // [수정됨] 이미 처리된 로그도 설정 변경 시 다시 처리 가능하도록 변경
+        const alreadyMarked = node.classList.contains('st-phone-hidden-log');
+
+        // 은행 로그 처리는 한 번만
+        if (!node.classList.contains('st-phone-log-processed')) {
+            const textDiv = node.querySelector('.mes_text');
+            if (textDiv) {
+                const text = textDiv.innerText;
+                const html = textDiv.innerHTML;
+
+                // [NEW] 은행 로그 패턴 (텍스트에서 제거용)
+                const bankLogPatterns = [
+                    /\[💰[^\]]*\]/gi,                    // [💰 ...] 형식
+                    /\(거래\s*내역:[^)]*\)/gi,           // (거래 내역: ...) 형식
+                ];
+
+                // 은행 로그가 포함되어 있으면 해당 부분만 제거
+                let hasBankLog = bankLogPatterns.some(p => p.test(text));
+                if (hasBankLog) {
+                    let cleanedHtml = html;
+                    bankLogPatterns.forEach(pattern => {
+                        cleanedHtml = cleanedHtml.replace(pattern, '');
+                    });
+                    // 빈 줄 정리
+                    cleanedHtml = cleanedHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
+                    cleanedHtml = cleanedHtml.replace(/^\s*<br\s*\/?>\s*/gi, '');
+                    textDiv.innerHTML = cleanedHtml;
+                    node.classList.add('st-phone-log-processed');
+                }
+            }
+        }
 
         const textDiv = node.querySelector('.mes_text');
         if (!textDiv) return;
 
         const text = textDiv.innerText;
-        const html = textDiv.innerHTML;
-
-        // [NEW] 은행 로그 패턴 (텍스트에서 제거용)
-        const bankLogPatterns = [
-            /\[💰[^\]]*\]/gi,                    // [💰 ...] 형식
-            /\(거래\s*내역:[^)]*\)/gi,           // (거래 내역: ...) 형식
-        ];
-
-        // 은행 로그가 포함되어 있으면 해당 부분만 제거
-        let hasBankLog = bankLogPatterns.some(p => p.test(text));
-        if (hasBankLog) {
-            let cleanedHtml = html;
-            bankLogPatterns.forEach(pattern => {
-                cleanedHtml = cleanedHtml.replace(pattern, '');
-            });
-            // 빈 줄 정리
-            cleanedHtml = cleanedHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
-            cleanedHtml = cleanedHtml.replace(/^\s*<br\s*\/?>\s*/gi, '');
-            textDiv.innerHTML = cleanedHtml;
-            node.classList.add('st-phone-log-processed');
-        }
 
         // [핵심 설명]
         // ^   : 문장의 시작을 의미
@@ -223,24 +267,26 @@ const EXTENSION_NAME = 'ST Phone System';
             /^\s*\[📞/i,           // 통화 시작/진행 로그
             /^\s*\[❌/i,           // 통화 종료 로그
             /^\s*\[📩/i,           // 문자 수신 로그 (사진 포함)
-            /^\s*\[📵/i,           // [🌟추가됨] 거절/부재중 로그 숨기기
-            /^\s*\[⛔/i,           // [🌟추가됨] 차단됨 로그 숨기기
-            /^\s*\[🚫/i,           // [NEW] 이거다. "읽씹(IGNORE)" 로그 숨기기 추가됨
+            /^\s*\[📵/i,           // 거절/부재중 로그 숨기기
+            /^\s*\[⛔/i,           // 차단됨 로그 숨기기
+            /^\s*\[🚫/i,           // 읽씹(IGNORE) 로그 숨기기
             /^\s*\[📲/i,           // 에어드롭 거절 로그 숨기기
-            /^\s*\[ts:/i,          // [NEW] 타임스탬프 로그 숨기기
-            /^\s*\[⏰/i,           // [NEW] 타임스탬프 로그 숨기기 (Time Skip)
-            /^\s*\[💰/i,          // [NEW] 은행 송금/잔액 로그 숨기기 (시작 부분)
-            /^\s*\[📺/i,          // [NEW] Fling 스트리밍 로그 숨기기
-            /^\s*\(System:/i,     // [NEW] 시스템 로그 메시지 숨기기 (읽씹/안읽씹 등)
+            /^\s*\[ts:/i,          // 타임스탬프 로그 숨기기
+            /^\s*\[⏰/i,           // 타임스탬프 로그 숨기기 (Time Skip)
+            /^\s*\[💰/i,           // 은행 송금/잔액 로그 숨기기 (시작 부분)
+            /^\s*\[📺/i,           // Fling 스트리밍 로그 숨기기
+            /^\s*\(System:/i,      // 시스템 로그 메시지 숨기기
+            /^\s*\[UNREAD\]/i,     // [NEW] 안읽씹 태그
+            /^\s*\[IGNORE\]/i,     // [NEW] 읽씹 태그
+            /^\s*\[BLOCK\]/i,      // [NEW] 차단 태그
         ];
 
         // 패턴 중 하나라도 맞으면 CSS 숨김 클래스 부여
         const shouldHide = hiddenPatterns.some(regex => regex.test(text));
 
-        if (shouldHide) {
+        if (shouldHide || alreadyMarked) {
             node.classList.add('st-phone-hidden-log');
-            // 혹시 모르니 style 속성으로도 이중 잠금
-            node.style.display = 'none';
+            // [수정됨] 더 이상 여기서 display 조작 안 함 - CSS 클래스가 처리
         }
 
         // [차단 해제 감지] - 확장 밖 채팅에서 캐릭터가 차단 해제 언급하면 자동 해제
@@ -419,6 +465,10 @@ const EXTENSION_NAME = 'ST Phone System';
             if (eventSource && eventTypes) {
                 eventSource.on(eventTypes.CHAT_COMPLETION_PROMPT_READY, (data) => {
                     injectCalendarPrompt(data);
+
+                    // [추가] 캘린더와 독립적으로 은행/인스타 프롬프트 주입
+                    injectBankPromptIndependent(data);
+                    injectInstagramPromptIndependent(data);
                 });
 
                 eventSource.on(eventTypes.MESSAGE_RECEIVED, (messageId) => {
@@ -509,6 +559,15 @@ const EXTENSION_NAME = 'ST Phone System';
             }
 
             console.log(`📅 [ST Phone] 기본 날짜 형식([YYYY년...])은 생략합니다.`);
+
+            // [추가] 폰 사용 중이어도 은행/인스타 프롬프트는 주입
+            if (typeof injectBankPrompt === 'function') {
+                injectBankPrompt(data);
+            }
+            if (typeof injectInstagramPrompt === 'function') {
+                injectInstagramPrompt(data);
+            }
+
             return; // 여기서 함수 종료! (아래의 기본 날짜 프롬프트 실행 안 됨)
         }
         // ==========================================================
@@ -516,17 +575,32 @@ const EXTENSION_NAME = 'ST Phone System';
         // [추가됨] 방송(Streaming) 중이면 캘린더 날짜 프롬프트 주입 스킵
         if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
             console.log('📅 [ST Phone] Streaming is active - Skipping Calendar prompt injection');
+            // [수정] 스트리밍 중이어도 은행/인스타는 별도로 Independent 함수에서 처리하므로 그냥 return
             return;
         }
 
         // 캘린더 앱이 설치되어 있는지 확인
         const Store = window.STPhone?.Apps?.Store;
         if (!Store || !Store.isInstalled('calendar')) {
+            // [수정] 캘린더 없어도 은행/인스타 프롬프트는 주입
+            if (typeof injectBankPrompt === 'function') {
+                injectBankPrompt(data);
+            }
+            if (typeof injectInstagramPrompt === 'function') {
+                injectInstagramPrompt(data);
+            }
             return;
         }
 
         const Calendar = window.STPhone?.Apps?.Calendar;
         if (!Calendar || !Calendar.isCalendarEnabled()) {
+            // [수정] 캘린더 비활성화여도 은행/인스타 프롬프트는 주입
+            if (typeof injectBankPrompt === 'function') {
+                injectBankPrompt(data);
+            }
+            if (typeof injectInstagramPrompt === 'function') {
+                injectInstagramPrompt(data);
+            }
             return;
         }
 
@@ -547,7 +621,7 @@ const EXTENSION_NAME = 'ST Phone System';
         if (typeof injectBankPrompt === 'function') {
             injectBankPrompt(data);
         }
-        
+
         // [NEW] 인스타그램 프롬프트 주입
         if (typeof injectInstagramPrompt === 'function') {
             injectInstagramPrompt(data);
@@ -556,10 +630,8 @@ const EXTENSION_NAME = 'ST Phone System';
 
     // [NEW] 은행 프롬프트 주입 함수
     function injectBankPrompt(data) {
-        // 폰 앱에서 생성 중이면 스킵 (문자앱은 자체적으로 처리함)
-        if (window.STPhone?.isPhoneGenerating) {
-            return;
-        }
+        // [수정됨] isPhoneGenerating 체크 제거 - 메인 채팅에서도 은행 프롬프트 필요
+        // 문자앱은 자체적으로 처리하므로 중복되어도 문제없음
 
         // [추가됨] 방송(Streaming) 중이면 은행 프롬프트 주입 스킵
         if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
@@ -581,54 +653,186 @@ const EXTENSION_NAME = 'ST Phone System';
             // 전체 은행 시스템 프롬프트 주입 (잔액 표시 + 송금 형식 설명)
             const bankPrompt = Bank.generateBankSystemPrompt();
             if (bankPrompt && data && data.chat && Array.isArray(data.chat)) {
-                data.chat.push({
-                    role: 'system',
-                    content: bankPrompt
-                });
+                // [수정] 유저 마지막 메시지 위에 삽입 (push → splice)
+                // 마지막 user 메시지의 인덱스 찾기
+                let lastUserIndex = -1;
+                for (let i = data.chat.length - 1; i >= 0; i--) {
+                    if (data.chat[i].role === 'user') {
+                        lastUserIndex = i;
+                        break;
+                    }
+                }
+
+                if (lastUserIndex >= 0) {
+                    // 유저 메시지 바로 앞에 삽입
+                    data.chat.splice(lastUserIndex, 0, {
+                        role: 'system',
+                        content: bankPrompt
+                    });
+                } else {
+                    // 유저 메시지가 없으면 그냥 push
+                    data.chat.push({
+                        role: 'system',
+                        content: bankPrompt
+                    });
+                }
+                data._bankPromptInjected = true;
                 console.log(`💰 [${EXTENSION_NAME}] Bank system prompt injected`);
             }
         } catch (e) {
             console.warn(`[${EXTENSION_NAME}] Bank prompt injection failed:`, e);
         }
     }
+// [NEW] 캘린더와 독립적인 은행 프롬프트 주입 함수
+    function injectBankPromptIndependent(data) {
+        // 이미 injectCalendarPrompt에서 주입했으면 스킵 (중복 방지)
+        if (data._bankPromptInjected) return;
 
+        // 폰 앱에서 생성 중이면 스킵
+        if (window.STPhone?.isPhoneGenerating) {
+            return;
+        }
+
+        // 방송 중이면 스킵
+        if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
+            return;
+        }
+
+        const Store = window.STPhone?.Apps?.Store;
+        if (!Store || !Store.isInstalled('bank')) {
+            return;
+        }
+
+        const Bank = window.STPhone?.Apps?.Bank;
+        if (!Bank) {
+            return;
+        }
+
+        try {
+            const bankPrompt = Bank.generateBankSystemPrompt();
+            if (bankPrompt && data && data.chat && Array.isArray(data.chat)) {
+                // [수정] 유저 마지막 메시지 위에 삽입
+                let lastUserIndex = -1;
+                for (let i = data.chat.length - 1; i >= 0; i--) {
+                    if (data.chat[i].role === 'user') {
+                        lastUserIndex = i;
+                        break;
+                    }
+                }
+
+                if (lastUserIndex >= 0) {
+                    data.chat.splice(lastUserIndex, 0, {
+                        role: 'system',
+                        content: bankPrompt
+                    });
+                } else {
+                    data.chat.push({
+                        role: 'system',
+                        content: bankPrompt
+                    });
+                }
+                data._bankPromptInjected = true;
+                console.log(`💰 [${EXTENSION_NAME}] Bank system prompt injected (independent)`);
+            }
+        } catch (e) {
+            console.warn(`[${EXTENSION_NAME}] Bank prompt injection failed:`, e);
+        }
+    }
+
+    // [NEW] 캘린더와 독립적인 인스타그램 프롬프트 주입 함수
+    function injectInstagramPromptIndependent(data) {
+        // 이미 주입했으면 스킵
+        if (data._instagramPromptInjected) return;
+
+        // 폰 앱에서 생성 중이면 스킵
+        if (window.STPhone?.isPhoneGenerating) {
+            return;
+        }
+
+        // 방송 중이면 스킵
+        if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
+            return;
+        }
+
+        const Store = window.STPhone?.Apps?.Store;
+        const Settings = window.STPhone?.Apps?.Settings;
+        const currentSettings = Settings?.getSettings?.() || {};
+
+        if (!Store || !Store.isInstalled('instagram') || currentSettings.instagramPostEnabled === false) {
+            return;
+        }
+
+        const chance = currentSettings.instagramPostChance || 15;
+        if (chance === 0) {
+            return;
+        }
+
+        const roll = Math.random() * 100;
+        if (roll >= chance) {
+            return;
+        }
+
+        let instagramPrompt = currentSettings.instagramPrompt;
+        if (!instagramPrompt) {
+            instagramPrompt = `### 📸 Instagram Posting
+To post on Instagram, append this tag at the END of your message:
+[IG_POST]Your caption here in Korean[/IG_POST]
+
+Example: "오늘 날씨 좋다~ [IG_POST]오늘 카페에서 작업 중! ☕️[/IG_POST]"
+
+Rules:
+- Only post when it makes sense (sharing moments, achievements, etc.)
+- Caption should be casual and short (1-2 sentences, Korean)
+- Do NOT include hashtags
+- Do NOT post every message - only when naturally appropriate`;
+        }
+
+        if (instagramPrompt && data && data.chat && Array.isArray(data.chat)) {
+            data.chat.push({
+                role: 'system',
+                content: instagramPrompt
+            });
+            data._instagramPromptInjected = true;
+            console.log(`📸 [${EXTENSION_NAME}] Instagram prompt injected (independent)`);
+        }
+    }
     // [NEW] 인스타그램 프롬프트 주입 함수
     function injectInstagramPrompt(data) {
         // 폰 앱에서 생성 중이면 스킵 (문자앱은 자체적으로 처리함)
         if (window.STPhone?.isPhoneGenerating) {
             return;
         }
-        
+
         // 방송(Streaming) 중이면 스킵
         if (window.STPhone?.Apps?.Streaming?.isLive?.()) {
             console.log('📺 [ST Phone] Streaming is active - Skipping Instagram prompt injection');
             return;
         }
-        
+
         const Store = window.STPhone?.Apps?.Store;
         const Settings = window.STPhone?.Apps?.Settings;
         const currentSettings = Settings?.getSettings?.() || {};
-        
+
         // 인스타그램 앱 설치됨 + 자동 포스팅 활성화된 경우에만 프롬프트 주입
         if (!Store || !Store.isInstalled('instagram') || currentSettings.instagramPostEnabled === false) {
             return;
         }
-        
+
         // [NEW] 선톡처럼 확률 체크 - 확률 미달이면 프롬프트 주입 안 함 (AI가 태그 안 쓰게)
         const chance = currentSettings.instagramPostChance || 15;
         if (chance === 0) {
             console.log(`📸 [${EXTENSION_NAME}] Instagram 확률 0% - 프롬프트 주입 스킵`);
             return;
         }
-        
+
         const roll = Math.random() * 100;
         if (roll >= chance) {
             console.log(`📸 [${EXTENSION_NAME}] Instagram 확률 미달 (${roll.toFixed(0)}% >= ${chance}%) - 프롬프트 주입 스킵`);
             return;
         }
-        
+
         console.log(`📸 [${EXTENSION_NAME}] Instagram 확률 통과 (${roll.toFixed(0)}% < ${chance}%) - 프롬프트 주입`);
-        
+
         // 인스타그램 프롬프트 가져오기 (기본값 포함)
         let instagramPrompt = currentSettings.instagramPrompt;
         if (!instagramPrompt) {
@@ -644,12 +848,13 @@ Rules:
 - Do NOT include hashtags
 - Do NOT post every message - only when naturally appropriate`;
         }
-        
+
         if (instagramPrompt && data && data.chat && Array.isArray(data.chat)) {
             data.chat.push({
                 role: 'system',
                 content: instagramPrompt
             });
+            data._instagramPromptInjected = true;  // [추가] 중복 방지 플래그
             console.log(`📸 [${EXTENSION_NAME}] Instagram prompt injected`);
         }
     }

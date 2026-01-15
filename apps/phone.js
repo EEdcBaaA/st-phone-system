@@ -35,75 +35,6 @@ window.STPhone.Apps.Phone = (function() {
             const context = window.SillyTavern?.getContext?.();
             if (!context) throw new Error('SillyTavern context not available');
 
-            const executeSlashCommands = context.executeSlashCommands || context.executeSlashCommandsWithOptions;
-
-            const findProfileName = async (id) => {
-                try {
-                    const parser = getSlashCommandParser();
-                    const listCmd = parser?.commands['profile-list'];
-                    const getCmd = parser?.commands['profile-get'];
-                    if (!listCmd || !getCmd) return null;
-
-                    const listResult = await listCmd.callback();
-                    const profiles = JSON.parse(listResult);
-                    if (Array.isArray(profiles)) {
-                        if (profiles.includes(id)) return id;
-                        for (const name of profiles) {
-                            try {
-                                const detail = await getCmd.callback({}, name);
-                                const profileData = JSON.parse(detail);
-                                const possibleId = profileData?.id || profileData?.profileId || profileData?.uuid;
-                                if (possibleId === id) return name;
-                            } catch (e) {
-                                continue;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    return null;
-                }
-                return null;
-            };
-
-            const runSlashGenWithProfile = async () => {
-                const parser = getSlashCommandParser();
-                const genCmd = parser?.commands['genraw'] || parser?.commands['gen'];
-                if (!genCmd) throw new Error('AI 명령어를 찾을 수 없습니다');
-
-                let originalProfile = null;
-                if (profileId && executeSlashCommands) {
-                    try {
-                        const currentResult = await executeSlashCommands('/profile');
-                        originalProfile = currentResult?.pipe || String(currentResult || '').trim();
-
-                        const targetProfileName = await findProfileName(profileId);
-                        if (targetProfileName && targetProfileName !== originalProfile) {
-                            await executeSlashCommands(`/profile ${targetProfileName}`);
-                            await new Promise((resolve) => setTimeout(resolve, 100));
-                        } else if (targetProfileName) {
-                            originalProfile = null;
-                        }
-                    } catch (e) {
-                        originalProfile = null;
-                    }
-                }
-
-                try {
-                    const result = await genCmd.callback({ quiet: 'true' }, prompt);
-                    const elapsedMs = (performance?.now?.() || 0) - startedAt;
-                    console.debug('📞 [Phone][AI] slash gen done', { debugId, elapsedMs: Math.round(elapsedMs), outLen: String(result || '').length });
-                    return String(result || '').trim();
-                } finally {
-                    if (originalProfile && executeSlashCommands) {
-                        try {
-                            await executeSlashCommands(`/profile ${originalProfile}`);
-                        } catch (e) {
-                            // no-op
-                        }
-                    }
-                }
-            };
-
             // Connection Profile이 설정되어 있으면 ConnectionManager 사용
             if (profileId) {
                 const connectionManager = context.ConnectionManagerRequestService;
@@ -115,27 +46,30 @@ window.STPhone.Apps.Phone = (function() {
                         overrides.max_tokens = maxTokens;
                     }
 
-                    try {
-                        const result = await connectionManager.sendRequest(
-                            profileId,
-                            [{ content: prompt, role: 'user' }],
-                            maxTokens,
-                            {},
-                            overrides
-                        );
+                    const result = await connectionManager.sendRequest(
+                        profileId,
+                        [{ content: prompt, role: 'user' }],
+                        maxTokens,
+                        {},
+                        overrides
+                    );
 
-                        const text = normalizeModelOutput(result);
-                        const elapsedMs = (performance?.now?.() || 0) - startedAt;
-                        console.debug('📞 [Phone][AI] sendRequest done', { debugId, elapsedMs: Math.round(elapsedMs), resultType: typeof result, outLen: String(text || '').length });
-                        return String(text || '').trim();
-                    } catch (e) {
-                        // Fallback to slash gen with profile switching
-                        return await runSlashGenWithProfile();
-                    }
+                    const text = normalizeModelOutput(result);
+                    const elapsedMs = (performance?.now?.() || 0) - startedAt;
+                    console.debug('📞 [Phone][AI] sendRequest done', { debugId, elapsedMs: Math.round(elapsedMs), resultType: typeof result, outLen: String(text || '').length });
+                    return String(text || '').trim();
                 }
             }
 
-            return await runSlashGenWithProfile();
+            // Fallback: 기존 genraw/gen 명령어 사용
+            const parser = getSlashCommandParser();
+            const genCmd = parser?.commands['genraw'] || parser?.commands['gen'];
+            if (!genCmd) throw new Error('AI 명령어를 찾을 수 없습니다');
+
+            const result = await genCmd.callback({ quiet: 'true' }, prompt);
+            const elapsedMs = (performance?.now?.() || 0) - startedAt;
+            console.debug('📞 [Phone][AI] slash gen done', { debugId, elapsedMs: Math.round(elapsedMs), outLen: String(result || '').length });
+            return String(result || '').trim();
 
         } catch (e) {
             const elapsedMs = (performance?.now?.() || 0) - startedAt;
@@ -407,6 +341,88 @@ window.STPhone.Apps.Phone = (function() {
                 font-size: 13px;
                 color: rgba(255,255,255,0.7);
             }
+            
+            /* [NEW] 모바일 전화 알림 배너 */
+            .st-call-banner {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: linear-gradient(135deg, #1c1c1e 0%, #2c2c2e 100%);
+                padding: 12px 16px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                z-index: 99999;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                animation: st-banner-slide-down 0.3s ease-out;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+            @keyframes st-banner-slide-down {
+                from { transform: translateY(-100%); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            .st-call-banner-avatar {
+                width: 44px;
+                height: 44px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 2px solid #34c759;
+            }
+            .st-call-banner-info {
+                flex: 1;
+                min-width: 0;
+            }
+            .st-call-banner-name {
+                font-size: 15px;
+                font-weight: 600;
+                color: white;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .st-call-banner-status {
+                font-size: 12px;
+                color: #34c759;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .st-call-banner-status i {
+                animation: st-phone-ring 0.5s ease-in-out infinite;
+            }
+            @keyframes st-phone-ring {
+                0%, 100% { transform: rotate(0deg); }
+                25% { transform: rotate(-15deg); }
+                75% { transform: rotate(15deg); }
+            }
+            .st-call-banner-actions {
+                display: flex;
+                gap: 10px;
+            }
+            .st-call-banner-btn {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                border: none;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 16px;
+                transition: transform 0.15s, opacity 0.15s;
+            }
+            .st-call-banner-btn:active {
+                transform: scale(0.9);
+            }
+            .st-call-banner-btn.decline {
+                background: #ff3b30;
+                color: white;
+            }
+            .st-call-banner-btn.accept {
+                background: #34c759;
+                color: white;
+            }
         </style>
     `;
 
@@ -420,6 +436,8 @@ window.STPhone.Apps.Phone = (function() {
     // [추가됨] 통화 대본을 저장할 임시 공간
     let currentLog = [];
 
+    // [NEW] 현재 통화의 고유 ID (메시지 병합용)
+    let currentCallId = null;
 
     // [수정됨] 타이핑(글자) 효과 제어용 변수
     let typeWriterInterval = null;
@@ -463,11 +481,63 @@ window.STPhone.Apps.Phone = (function() {
         loadHistory();
         if (!Number.isInteger(index)) return;
         if (index < 0 || index >= callHistory.length) return;
+        
+        // [수정됨] 해당 통화의 callId 또는 연락처 이름으로 채팅 로그도 삭제
+        const entry = callHistory[index];
+        if (entry) {
+            deleteCallLogFromChat(entry.callId, entry.contactName);
+        }
+        
         callHistory.splice(index, 1);
         saveHistory();
     }
 
-    function addToHistory(contactId, type) {
+    // [수정됨] callId 또는 연락처 이름으로 채팅에서 통화 로그 삭제
+    function deleteCallLogFromChat(callId, contactName = null) {
+        if (!window.SillyTavern) return;
+        const context = window.SillyTavern.getContext();
+        if (!context || !context.chat) return;
+
+        let deleted = false;
+        for (let i = context.chat.length - 1; i >= 0; i--) {
+            const msg = context.chat[i];
+            
+            // 전화 로그가 아니면 스킵
+            if (!msg.extra?.is_phone_log) continue;
+            
+            // callId로 매칭
+            if (callId && msg.extra?.callId === callId) {
+                context.chat.splice(i, 1);
+                deleted = true;
+                console.log(`📞 [Phone] 전화 로그 삭제됨 (callId: ${callId})`);
+                continue;
+            }
+            
+            // callId가 없는 오래된 로그는 텍스트로 매칭
+            if (contactName && !msg.extra?.callId) {
+                const msgText = msg.mes || '';
+                // 📞 또는 ❌로 시작하고 해당 연락처 이름이 포함된 경우
+                if ((msgText.startsWith('[📞') || msgText.startsWith('[❌')) && 
+                    msgText.includes(contactName)) {
+                    context.chat.splice(i, 1);
+                    deleted = true;
+                    console.log(`📞 [Phone] 전화 로그 삭제됨 (이름 매칭: ${contactName})`);
+                }
+            }
+        }
+
+        if (deleted) {
+            // 저장
+            if (window.SlashCommandParser && window.SlashCommandParser.commands['savechat']) {
+                window.SlashCommandParser.commands['savechat'].callback({});
+            } else if (typeof saveChatConditional === 'function') {
+                saveChatConditional();
+            }
+            toastr.info('📞 관련 채팅 로그도 함께 삭제되었습니다');
+        }
+    }
+
+    function addToHistory(contactId, type, callIdParam = null) {
         loadHistory();
         const contact = window.STPhone.Apps?.Contacts?.getContact(contactId);
         callHistory.unshift({
@@ -475,7 +545,8 @@ window.STPhone.Apps.Phone = (function() {
             contactName: contact?.name || 'Unknown',
             contactAvatar: contact?.avatar || '',
             type,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            callId: callIdParam || currentCallId || ('call_' + Date.now()) // callId 저장
         });
         if (callHistory.length > 50) callHistory = callHistory.slice(0, 50);
         saveHistory();
@@ -769,6 +840,9 @@ window.STPhone.Apps.Phone = (function() {
         // [중요] 통화 대본 기록 초기화
         currentLog = [];
 
+        // [NEW] 새 통화 ID 생성 (메시지 병합용)
+        currentCallId = 'call_' + Date.now();
+
         // outgoing(발신) 설정
         currentCall = { contactId, contact, startTime: null, isOutgoing: true };
 
@@ -795,12 +869,121 @@ window.STPhone.Apps.Phone = (function() {
 
         if (!contact) return;
 
-        // 폰이 내려가 있다면 자동으로 올림 (팝업!)
+        // [NEW] 모바일 체크 (화면 너비 768px 이하)
+        const isMobile = window.innerWidth <= 768;
         const $phoneContainer = $('#st-phone-container');
-        if (!$phoneContainer.hasClass('active')) {
+        const isPhoneOpen = $phoneContainer.hasClass('active');
+        
+        // [NEW] 모바일이고 폰이 안 열려있으면 배너로 표시
+        if (isMobile && !isPhoneOpen) {
+            showIncomingCallBanner(contact);
+            return;
+        }
+
+        // 폰이 내려가 있다면 자동으로 올림 (팝업!) - PC에서만
+        if (!isPhoneOpen) {
             window.STPhone.UI.togglePhone();
         }
 
+        showIncomingCallFullScreen(contact);
+    }
+    
+    // [NEW] 모바일용 상단 배너 알림
+    function showIncomingCallBanner(contact) {
+        // 기존 배너 제거
+        $('#st-call-banner').remove();
+        
+        const bannerHtml = `
+            ${css}
+            <div class="st-call-banner" id="st-call-banner">
+                <img class="st-call-banner-avatar" src="${contact.avatar || DEFAULT_AVATAR}" onerror="this.src='${DEFAULT_AVATAR}'">
+                <div class="st-call-banner-info">
+                    <div class="st-call-banner-name">${contact.name}</div>
+                    <div class="st-call-banner-status"><i class="fa-solid fa-phone-volume"></i> 전화가 왔습니다</div>
+                </div>
+                <div class="st-call-banner-actions">
+                    <button class="st-call-banner-btn decline" id="st-banner-decline"><i class="fa-solid fa-phone-slash"></i></button>
+                    <button class="st-call-banner-btn accept" id="st-banner-accept"><i class="fa-solid fa-phone"></i></button>
+                </div>
+            </div>
+        `;
+        
+        $('body').append(bannerHtml);
+        
+        // 거절 버튼
+        $('#st-banner-decline').on('click', () => {
+            let userName = 'User';
+            if (window.SillyTavern && window.SillyTavern.getContext) {
+                const ctx = window.SillyTavern.getContext();
+                userName = ctx.name2 || 'User';
+                if (ctx.chatId) {
+                    try {
+                        const cfg = JSON.parse(localStorage.getItem('st_phone_config_' + ctx.chatId) || '{}');
+                        if (cfg.userName) userName = cfg.userName;
+                    } catch(e) {}
+                }
+            }
+            
+            // [수정됨] callId 생성해서 기록에 포함
+            const missedCallId = 'call_' + Date.now();
+            
+            if (!contact.isTemp) addToHistory(contact.id, 'missed', missedCallId);
+            $('#st-call-banner').remove();
+            
+            addHiddenLog('System', `[📵 Call Declined by ${userName}] (${userName} explicitly rejected ${contact.name}'s call)`);
+            triggerAINotification(contact, 'declined', userName);
+            
+            toastr.info(`${contact.name}의 전화를 거절했습니다`);
+        });
+        
+        // 받기 버튼
+        $('#st-banner-accept').on('click', () => {
+            $('#st-call-banner').remove();
+            
+            // 폰 열기
+            const $phoneContainer = $('#st-phone-container');
+            if (!$phoneContainer.hasClass('active')) {
+                window.STPhone.UI.togglePhone();
+            }
+            
+            // 통화 시작
+            currentCallId = 'call_' + Date.now();
+            addHiddenLog('System', `[📞 Incoming Call Accepted from ${contact.name}]`);
+            
+            currentLog = [];
+            currentCall = {
+                contactId: contact.id,
+                contact: contact,
+                startTime: null,
+                isOutgoing: false
+            };
+            showCallingScreen(contact, false);
+        });
+        
+        // 30초 타임아웃
+        setTimeout(() => {
+            if ($('#st-call-banner').length) {
+                let userName = 'User';
+                if (window.SillyTavern && window.SillyTavern.getContext) {
+                    const ctx = window.SillyTavern.getContext();
+                    userName = ctx.name2 || 'User';
+                }
+                
+                // [수정됨] callId 생성해서 기록에 포함
+                const missedCallId = 'call_' + Date.now();
+                
+                if (!contact.isTemp) addToHistory(contact.id, 'missed', missedCallId);
+                $('#st-call-banner').remove();
+                
+                addHiddenLog('System', `[📵 Missed Call from ${contact.name}] (${userName} did not answer within 30 seconds)`);
+                
+                toastr.warning(`${contact.name}의 부재중 전화`);
+            }
+        }, 30000);
+    }
+    
+    // [NEW] 전체화면 수신 화면 (PC/폰 앱 열려있을 때)
+    function showIncomingCallFullScreen(contact) {
         const $screen = window.STPhone.UI.getContentElement();
         $screen.append(`
             ${css}
@@ -836,8 +1019,11 @@ window.STPhone.Apps.Phone = (function() {
                 }
             }
 
+            // [수정됨] callId 생성해서 기록에 포함
+            const missedCallId = 'call_' + Date.now();
+
             // 임시 연락처가 아니면 기록에 남김
-            if (!contact.isTemp) addToHistory(contact.id, 'missed');
+            if (!contact.isTemp) addToHistory(contact.id, 'missed', missedCallId);
             $('#st-incoming-screen').remove();
 
             // AI에게 거절 사실 알림
@@ -850,6 +1036,10 @@ window.STPhone.Apps.Phone = (function() {
         // 2. 받기(Accept) 버튼 클릭 시
         $('#st-incoming-accept').on('click', () => {
             $('#st-incoming-screen').remove();
+            
+            // [NEW] 새 통화 ID 생성 (메시지 병합용)
+            currentCallId = 'call_' + Date.now();
+            
             addHiddenLog('System', `[📞 Incoming Call Accepted from ${contact.name}]`);
 
             currentLog = [];
@@ -878,7 +1068,10 @@ window.STPhone.Apps.Phone = (function() {
                     }
                 }
 
-                if (!contact.isTemp) addToHistory(contact.id, 'missed');
+                // [수정됨] callId 생성해서 기록에 포함
+                const missedCallId = 'call_' + Date.now();
+
+                if (!contact.isTemp) addToHistory(contact.id, 'missed', missedCallId);
                 $('#st-incoming-screen').remove();
                 toastr.warning(`📵 ${contact.name}의 부재중 전화`);
 
@@ -1498,7 +1691,8 @@ ${currentTurnLine}
                 type: type,
                 timestamp: Date.now(),
                 duration: callDuration,
-                log: [...currentLog]
+                log: [...currentLog],
+                callId: currentCallId // [NEW] callId 저장 (채팅 로그 삭제용)
             });
             if (callHistory.length > 50) callHistory = callHistory.slice(0, 50);
             saveHistory();
@@ -1515,6 +1709,10 @@ ${currentTurnLine}
             }
         }
 
+        // [NEW] callId 초기화
+        const savedCallId = currentCallId;
+        currentCallId = null;
+        
         callDuration = 0;
         currentCall = null;
         $('#st-calling-screen').remove();
@@ -1628,6 +1826,11 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
 
             // 괄호나 태그 제거
             replyText = replyText.replace(/^\[.*?\]\s*/g, '').replace(/^"(.*)"$/, '$1').trim();
+            
+            // [NEW] pic 태그 제거
+            replyText = replyText.replace(/<pic\s+prompt\s*=\s*"[^"]*"\s*\/?>/gi, '');
+            replyText = replyText.replace(/<pic\s+prompt\s*=\s*'[^']*'\s*\/?>/gi, '');
+            replyText = replyText.replace(/<\/?pic[^>]*>/gi, '').trim();
 
             if (!replyText || replyText.length < 2) {
                 replyText = "...?";
@@ -1693,12 +1896,38 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
         if (typeof SlashCommandParser !== 'undefined') return SlashCommandParser;
         return null;
     }
-    // ========== [수정됨] 히든 로그 함수 (누락된 부분 복구) ==========
+    // ========== [개선됨] 히든 로그 함수 - 전화 통화 병합 지원 ==========
     function addHiddenLog(speaker, text) {
         if (!window.SillyTavern) return;
         const context = window.SillyTavern.getContext();
 
         if (!context || !context.chat) return;
+
+        // [NEW] 전화 로그인지 확인 (📞 또는 ❌ 로 시작)
+        const isCallLog = text.startsWith('[📞') || text.startsWith('[❌');
+        
+        // [NEW] 전화 병합 로직: 현재 통화 중이고 callId가 있으면 병합
+        if (isCallLog && currentCallId) {
+            // 같은 callId를 가진 메시지 찾기
+            for (let i = context.chat.length - 1; i >= 0; i--) {
+                const msg = context.chat[i];
+                if (msg.extra?.is_phone_log && msg.extra?.callId === currentCallId) {
+                    // 기존 메시지에 줄바꿈으로 병합
+                    msg.mes = msg.mes + '\n' + text;
+                    msg.send_date = Date.now(); // 타임스탬프 업데이트
+                    
+                    // 저장
+                    if (window.SlashCommandParser && window.SlashCommandParser.commands['savechat']) {
+                        window.SlashCommandParser.commands['savechat'].callback({});
+                    } else if (typeof saveChatConditional === 'function') {
+                        saveChatConditional();
+                    }
+                    
+                    console.log('📞 [Phone] 전화 로그 병합됨 (callId:', currentCallId, ')');
+                    return; // 병합했으니 새 메시지 추가 안 함
+                }
+            }
+        }
 
         const newMessage = {
             name: speaker,
@@ -1706,7 +1935,10 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
             is_system: false, // AI가 기억하도록 일반 메시지로 위장
             send_date: Date.now(),
             mes: text,
-            extra: { is_phone_log: true }
+            extra: { 
+                is_phone_log: true,
+                callId: currentCallId // [NEW] callId 저장 (병합/삭제용)
+            }
         };
 
         context.chat.push(newMessage);
@@ -1813,9 +2045,11 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
 
         if (charName) {
             const contacts = window.STPhone.Apps?.Contacts?.getAllContacts?.() || [];
-            const contact = contacts.find(c => c.name === charName);
+            // [수정됨] 대소문자 무시하고 이름 매칭
+            const contact = contacts.find(c => c.name?.toLowerCase() === charName?.toLowerCase());
 
             if (contact?.disableProactiveCall) {
+                console.log('📱 [Phone] 선제 전화 비활성화됨 - 프롬프트 주입 취소:', charName);
                 if (parser.commands['eject']) {
                     try {
                         await parser.commands['eject'].callback({}, 'st_phone_auto_call_logic');
@@ -1881,8 +2115,20 @@ Wait for the system to process the call.`;
         if (html.toLowerCase().includes('[call to user]')) {
             msgNode.dataset.callChecked = "true";
 
+            // [수정됨] 태그는 항상 제거
             textDiv.innerHTML = html.replace(/\[call to user\]/gi, '').trim();
+            
             const charName = msgNode.getAttribute('ch_name') || "Unknown";
+            
+            // [수정됨] 연락처의 선제 전화 비활성화 설정 확인 - 대소문자 무시
+            const contacts = window.STPhone.Apps?.Contacts?.getAllContacts?.() || [];
+            const contact = contacts.find(c => c.name?.toLowerCase() === charName?.toLowerCase());
+            
+            if (contact?.disableProactiveCall) {
+                console.log('📱 [Phone] 선제 전화 비활성화됨 - 태그만 제거하고 전화 안 걸기:', charName);
+                return;
+            }
+            
             triggerIncomingCallByName(charName);
         }
     }
@@ -1914,7 +2160,11 @@ Wait for the system to process the call.`;
             };
         }
 
-        if (contact.disableProactiveCall) return;
+        // [수정됨] 이미 checkMessageForCallTag에서 체크했지만 안전을 위해 한번 더
+        if (contact.disableProactiveCall) {
+            console.log('📱 [Phone] triggerIncomingCallByName - 선제 전화 비활성화됨:', name);
+            return;
+        }
 
         receiveCall(contact);
     }

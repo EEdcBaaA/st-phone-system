@@ -696,7 +696,7 @@ window.STPhone.Apps.Streaming = (function() {
     let isReplayMode = false;
     let replayData = null;
     let replayIndex = 0;
-    
+
     // 스트리머 프로필 설정
     let streamerProfile = {
         nickname: '',
@@ -895,7 +895,7 @@ Output ONLY tags, no explanation.
         // Get currency info from Bank app
         const Bank = window.STPhone?.Apps?.Bank;
         const currencyCode = Bank?.getCurrency?.() || 'KRW';
-        
+
         // Currency settings for different regions
         const currencyInfo = {
             KRW: { symbol: '₩', name: '원', region: '한국', locale: 'Korean', smallDonation: '1,000~10,000', mediumDonation: '10,000~50,000', bigDonation: '100,000~1,000,000', usernameStyle: 'Korean-style nicknames (예: 감자탕조아, 방탄소녀단, 크크크123)' },
@@ -905,7 +905,7 @@ Output ONLY tags, no explanation.
             GBP: { symbol: '£', name: '파운드', region: '영국', locale: 'British', smallDonation: '1~10', mediumDonation: '10~50', bigDonation: '100~1,000', usernameStyle: 'British-style usernames (e.g., TeaLover99, LondonGamer, CheekyNandos)' },
             CNY: { symbol: '¥', name: '위안', region: '중국', locale: 'Chinese', smallDonation: '5~50', mediumDonation: '50~300', bigDonation: '500~5,000', usernameStyle: 'Chinese-style usernames (e.g., 小龙_gamer, 熊猫123, 大神来了)' }
         };
-        
+
         const currInfo = currencyInfo[currencyCode] || currencyInfo.KRW;
 
         // System prompt
@@ -1022,7 +1022,7 @@ For donations, use this format (use ${currInfo.symbol} symbol):
 
         for (const line of lines) {
             const trimmedLine = line.trim();
-            
+
             // Skip empty lines or lines that are just formatting
             if (!trimmedLine || trimmedLine.startsWith('---') || trimmedLine.startsWith('===')) {
                 continue;
@@ -1088,7 +1088,7 @@ For donations, use this format (use ${currInfo.symbol} symbol):
 
     async function displayChatsSequentially(chats) {
         const $chatMessages = $('#st-streaming-chat-messages');
-        
+
         // Get currency info for display
         const Bank = window.STPhone?.Apps?.Bank;
         const currencyCode = Bank?.getCurrency?.() || 'KRW';
@@ -1615,18 +1615,18 @@ For donations, use this format (use ${currInfo.symbol} symbol):
 
                 <div class="st-streaming-setup" style="margin-bottom: 15px;">
                     <div class="st-streaming-setup-title">🎭 스트리머 프로필</div>
-                    
+
                     <label style="font-size: 13px; color: #adadb8; margin-bottom: 6px; display: block;">닉네임 (방송용)</label>
-                    <input type="text" class="st-streaming-input" id="st-streamer-nickname" 
-                           placeholder="예: 가면사나이 (비워두면 기본 이름 사용)" 
+                    <input type="text" class="st-streaming-input" id="st-streamer-nickname"
+                           placeholder="예: 가면사나이 (비워두면 기본 이름 사용)"
                            value="${streamerProfile.nickname || ''}">
-                    
+
                     <label style="font-size: 13px; color: #adadb8; margin-bottom: 6px; display: block;">컨셉 / 캐릭터 설정</label>
-                    <textarea class="st-streaming-textarea" id="st-streamer-concept" 
+                    <textarea class="st-streaming-textarea" id="st-streamer-concept"
                               placeholder="예: 가면을 쓰고 방송하는 미스터리한 스트리머">${streamerProfile.concept || ''}</textarea>
-                    
+
                     <label style="font-size: 13px; color: #adadb8; margin-bottom: 6px; display: block;">옷차림 / 외모</label>
-                    <textarea class="st-streaming-textarea" id="st-streamer-outfit" 
+                    <textarea class="st-streaming-textarea" id="st-streamer-outfit"
                               placeholder="예: 검은 가면과 후드티를 입고 있음">${streamerProfile.outfit || ''}</textarea>
 
                     <div style="margin-top: 20px; display: flex; gap: 10px;">
@@ -1645,7 +1645,7 @@ For donations, use this format (use ${currInfo.symbol} symbol):
 
         $('#st-streaming-settings-back').on('click', renderProfileScreen);
         $('#st-settings-cancel').on('click', renderProfileScreen);
-        
+
         $('#st-settings-save').on('click', function() {
             streamerProfile.nickname = $('#st-streamer-nickname').val().trim();
             streamerProfile.concept = $('#st-streamer-concept').val().trim();

@@ -47,6 +47,39 @@ window.STPhone.Apps.Messages = (function() {
         return text.trim();
     }
 
+    // 기프티콘 카드 메시지 파싱 및 HTML 생성
+    function parseGiftCardMessage(text) {
+        const match = text.match(/\[GIFT_CARD\]([\s\S]*?)\[\/GIFT_CARD\]/);
+        if (!match) return null;
+
+        try {
+            const data = JSON.parse(match[1]);
+            return `
+                <div class="st-gift-card">
+                    <div class="st-gift-card-ribbon">🎁 GIFT</div>
+                    <div class="st-gift-card-header">
+                        <i class="fa-solid fa-gift"></i>
+                        <span>디지털 기프티콘</span>
+                    </div>
+                    <div class="st-gift-card-item">
+                        <span class="st-gift-card-emoji">${data.itemEmoji || '🎁'}</span>
+                        <div class="st-gift-card-info">
+                            <div class="st-gift-card-name">${data.itemName || '선물'}</div>
+                            <div class="st-gift-card-desc">${data.itemDesc || ''}</div>
+                        </div>
+                    </div>
+                    <div class="st-gift-card-footer">
+                        <span class="st-gift-card-brand">${data.brandIcon || ''} ${data.brandName || ''}</span>
+                        <span class="st-gift-card-price">${data.priceFormatted || ''}</span>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            console.error('[Messages] Gift card parse error:', e);
+            return null;
+        }
+    }
+
     /**
      * AI 생성 함수 - 멀티턴 메시지 배열 지원
      * @param {string|Array} promptOrMessages - 단일 프롬프트 문자열 또는 메시지 배열 [{role, content}, ...]
@@ -370,7 +403,89 @@ window.STPhone.Apps.Messages = (function() {
             .st-msg-bubble.them { align-self: flex-start; background: var(--msg-their-bubble, var(--pt-card-bg, #e5e5ea)); color: var(--msg-their-text, var(--pt-text-color, #000)); border-bottom-left-radius: 4px; }
             .st-msg-bubble.deleted { opacity: 0.6; font-style: italic; }
             .st-msg-image { max-width: 200px; border-radius: 12px; cursor: pointer; }
-
+/* 기프티콘 카드 스타일 */
+            .st-gift-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 16px;
+                padding: 16px;
+                max-width: 240px;
+                color: white;
+                box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+                position: relative;
+                overflow: hidden;
+            }
+            .st-gift-card::before {
+                content: '';
+                position: absolute;
+                top: -50%;
+                right: -50%;
+                width: 100%;
+                height: 100%;
+                background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+                pointer-events: none;
+            }
+            .st-gift-card-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 12px;
+                font-size: 12px;
+                opacity: 0.9;
+            }
+            .st-gift-card-header i {
+                font-size: 14px;
+            }
+            .st-gift-card-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 12px;
+            }
+            .st-gift-card-emoji {
+                font-size: 32px;
+                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+            }
+            .st-gift-card-info {
+                flex: 1;
+            }
+            .st-gift-card-name {
+                font-weight: 600;
+                font-size: 15px;
+                margin-bottom: 2px;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            .st-gift-card-desc {
+                font-size: 11px;
+                opacity: 0.85;
+            }
+            .st-gift-card-footer {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding-top: 12px;
+                border-top: 1px solid rgba(255,255,255,0.2);
+            }
+            .st-gift-card-brand {
+                font-size: 12px;
+                opacity: 0.9;
+            }
+            .st-gift-card-price {
+                font-weight: 700;
+                font-size: 16px;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            .st-gift-card-ribbon {
+                position: absolute;
+                top: 12px;
+                right: -28px;
+                background: #ff6b6b;
+                color: white;
+                font-size: 10px;
+                font-weight: 600;
+                padding: 4px 30px;
+                transform: rotate(45deg);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
             /* 메시지 삭제 버튼 (3초 내) */
             .st-msg-delete-btn {
                 position: absolute;
@@ -414,7 +529,7 @@ window.STPhone.Apps.Messages = (function() {
             }
 
             /* 그룹챗 전용 - wrapper 스타일 (말풍선 너비는 테마 설정 유지) */
-            .st-msg-wrapper { display: flex; flex-direction: column; }
+            .st-msg-wrapper { display: flex; flex-direction: column; gap: 8px; }
             /* 입력창 영역 */
             .st-chat-input-area {
                 display: flex; align-items: flex-end; padding: 14px 16px; padding-bottom: 45px; gap: 10px;
@@ -1088,9 +1203,50 @@ function stripInstagramTags(text) {
     // [reply] 태그 제거 (답장 마커)
     cleaned = cleaned.replace(/\[reply\]/gi, '');
     cleaned = cleaned.replace(/\[REPLY\s*[^\]]*\]/gi, '');
+    // [NEW] <pic prompt="..."> 태그 제거 (메인 ST에서 혼입된 이미지 프롬프트)
+    cleaned = stripPicTags(cleaned);
     // 연속 공백/줄바꿈 정리
     cleaned = cleaned.replace(/\n\s*\n/g, '\n').trim();
     return cleaned;
+}
+
+// [NEW] pic 태그 제거 헬퍼 함수
+function stripPicTags(text) {
+    if (!text) return text;
+    let cleaned = text;
+    // <pic prompt="..."> 형식
+    cleaned = cleaned.replace(/<pic\s+prompt\s*=\s*"[^"]*"\s*\/?>/gi, '');
+    // <pic prompt='...'> 형식
+    cleaned = cleaned.replace(/<pic\s+prompt\s*=\s*'[^']*'\s*\/?>/gi, '');
+    // 기타 <pic ...> 태그
+    cleaned = cleaned.replace(/<\/?pic[^>]*>/gi, '');
+    return cleaned.trim();
+}
+
+// [NEW] AI 응답에서 잘못된 형식 태그 제거
+function cleanAIResponse(text) {
+    if (!text) return text;
+    let cleaned = text;
+
+    // "assistant:" 접두사 제거 (대소문자 무시)
+    cleaned = cleaned.replace(/^assistant:\s*/gi, '');
+
+    // "user:" 접두사 제거
+    cleaned = cleaned.replace(/^user:\s*/gi, '');
+
+    // [📩 {{char}} -> {{user}}]: 형식 제거 (AI가 잘못 출력한 경우)
+    cleaned = cleaned.replace(/^\[📩\s*[^\]]+\]:\s*/gi, '');
+
+    // [📩 ... -> ...] 형식 전체 제거 (줄 시작에 있을 때)
+    cleaned = cleaned.replace(/^\s*\[📩[^\]]*\]\s*/gim, '');
+
+    // {{char}}, {{user}} 템플릿 변수가 그대로 출력된 경우 제거
+    cleaned = cleaned.replace(/\{\{char\}\}/gi, '').replace(/\{\{user\}\}/gi, '');
+
+    // pic 태그도 제거
+    cleaned = stripPicTags(cleaned);
+
+    return cleaned.trim();
 }
 // #IG_END
 
@@ -1978,7 +2134,14 @@ function addMessage(contactId, sender, text, imageUrl = null, addTimestamp = fal
                 }
             }
 
-            if (displayText) {  // #IG - displayText 사용
+            // [기프티콘 카드 처리 - 저장된 메시지 렌더링 시]
+            const isGiftCard = m.text && m.text.includes('[GIFT_CARD]');
+            if (isGiftCard) {
+                const giftHtml = parseGiftCardMessage(m.text);
+                if (giftHtml) {
+                    msgsHtml += `<div class="st-msg-bubble ${side}" style="background: transparent !important; padding: 0 !important; box-shadow: none !important;">${giftHtml}</div>`;
+                }
+            } else if (displayText) {  // #IG - displayText 사용
                 if (isDeleted) {
                     const lineAttr = `data-action="msg-option" data-idx="${index}" data-line-idx="0" data-sender="${side}" class="st-msg-bubble ${side}${deletedClass} clickable" style="cursor:pointer;" title="옵션 보기"`;
                     msgsHtml += `<div ${lineAttr}>${displayText}${excludedTag}</div>`;  // #IG - displayText 사용
@@ -2490,6 +2653,19 @@ $('#st-chat-cam').on('click', () => {
             wrapperHtml += `<div ${imgAttr}><img class="st-msg-image" src="${imageUrl}"></div>`;
         }
 
+        // [기프티콘 카드 처리]
+        if (text && text.includes('[GIFT_CARD]')) {
+            const giftHtml = parseGiftCardMessage(text);
+            if (giftHtml) {
+                wrapperHtml += `<div class="st-msg-bubble ${side}" style="background: transparent !important; padding: 0 !important; box-shadow: none !important;">${giftHtml}</div>`;
+                wrapperHtml += unreadHtml;
+                wrapperHtml += `</div>`;
+                $container.find('#st-typing').before(wrapperHtml);
+                scrollToBottom();
+                return;
+            }
+        }
+
         if (text) {
             const translateEnabled = settings.translateEnabled && sender === 'them' && translatedText;
             const displayMode = settings.translateDisplayMode || 'both';
@@ -2655,6 +2831,9 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
             if (replyText.startsWith(namePrefix)) {
                 replyText = replyText.substring(namePrefix.length).trim();
             }
+
+            // [NEW] pic 태그 제거
+            replyText = stripPicTags(replyText);
 
             if (replyText.includes('[IGNORE]') || replyText.startsWith('[📩')) {
                 console.log('[Messages] 봇이 삭제 메시지 무시함');
@@ -2937,6 +3116,9 @@ If you want to ignore, reply ONLY with: [IGNORE]`;
             let result = await generateWithProfile(messages, maxContextTokens);
             let replyText = String(result || '').trim();
 
+            // [NEW] pic 태그 제거
+            replyText = stripPicTags(replyText);
+
             // [안읽씹 / 읽씹 로직]
             if (replyText.includes('[UNREAD]')) {
                 console.log('📱 [Messages][Interrupt] 봇이 안읽씹(Unread) 선택');
@@ -3200,6 +3382,9 @@ Example of WRONG output: "I can't believe you did this. [BLOCK]" ← WRONG, tag 
             let result = await generateWithProfile(messages, maxContextTokens);
             let replyText = String(result).trim();
 
+            // [NEW] AI가 잘못 출력한 형식 태그 제거
+            replyText = cleanAIResponse(replyText);
+
             // [차단 로직] - 가장 먼저 체크
             if (replyText.includes('[BLOCK]')) {
                 console.log('📱 [Messages] 봇이 차단(Block) 선택');
@@ -3295,6 +3480,12 @@ Example of WRONG output: "I can't believe you did this. [BLOCK]" ← WRONG, tag 
 
             // (Photo: ...) 패턴 제거 (인스타 포스팅용 이미지 설명)
             replyText = replyText.replace(/\(Photo:\s*[^)]*\)/gi, '').trim();
+
+            // [NEW] <pic prompt="..."> 태그 제거 (메인 ST 컨텍스트에서 혼입된 이미지 프롬프트)
+            // AI가 잘못 출력한 pic 태그를 깨끗이 제거
+            replyText = replyText.replace(/<pic\s+prompt\s*=\s*"[^"]*"\s*\/?>/gi, '').trim();
+            replyText = replyText.replace(/<pic\s+prompt\s*=\s*'[^']*'\s*\/?>/gi, '').trim();
+            replyText = replyText.replace(/<\/?pic[^>]*>/gi, '').trim(); // 기타 pic 관련 태그
             // #IG_END
 
             // [수정] Instagram 포스팅 있으면 [IMG:] 무시 (중복 이미지 생성 방지)
@@ -3334,9 +3525,19 @@ Example of WRONG output: "I can't believe you did this. [BLOCK]" ← WRONG, tag 
                  let shouldCall = false;
                  let botReplyTo = null;
 
+                 // [NEW] disableProactiveCall 체크 - 태그는 항상 제거하되 전화는 설정에 따라
                  if (replyText.toLowerCase().includes('[call to user]')) {
-                     shouldCall = true;
+                     // 태그는 항상 제거
                      replyText = replyText.replace(/\[call to user\]/gi, '').trim();
+
+                     // 연락처의 선제 전화 비활성화 설정 확인
+                     const contactData = window.STPhone.Apps?.Contacts?.getContact?.(contactId);
+                     if (contactData?.disableProactiveCall) {
+                         console.log('📱 [Messages] 선제 전화 비활성화됨 - 전화 걸지 않음');
+                         shouldCall = false;
+                     } else {
+                         shouldCall = true;
+                     }
                  }
 
                  if (replyText.toLowerCase().includes('[reply]')) {
@@ -3471,6 +3672,9 @@ Keep the response brief and natural like a real text message.`;
             replyText = replyText.replace(/\[IMG:\s*[^\]]+\]/gi, '');
             replyText = replyText.replace(/\[💰[^\]]*\]/gi, '');  // 은행 로그 제거
             replyText = replyText.replace(/\(거래\s*내역:[^)]*\)/gi, '');  // 거래 내역 제거
+
+            // [NEW] pic 태그 제거
+            replyText = stripPicTags(replyText);
 
             if (replyText) {
                 // 메시지 저장
@@ -3753,13 +3957,48 @@ async function translateText(originalText, overridePrompt = null) {
         }
     }
 
-    // ========== [수정됨] 히든 로그 (AI 기억용) ==========
+    // ========== [개선됨] 히든 로그 (AI 기억용) - SMS 병합 지원 ==========
     function addHiddenLog(speaker, text) {
         if (!window.SillyTavern) return;
         const context = window.SillyTavern.getContext();
 
         // 채팅 배열이 없으면 중단
         if (!context || !context.chat) return;
+
+        // [NEW] SMS 관련 로그인지 확인 (모든 문자 관련 패턴)
+        const smsLogPatterns = [
+            /^\[📩/,     // 일반 SMS 로그
+            /^\[UNREAD\]/i,  // 안읽씹 태그
+            /^\[IGNORE\]/i,  // 읽씹 태그
+            /^\[BLOCK\]/i,   // 차단 태그
+        ];
+        const isSmsLog = smsLogPatterns.some(p => p.test(text));
+
+        // [NEW] SMS 병합 로직: 마지막 메시지가 SMS 관련 로그이면 병합
+        if (isSmsLog && context.chat.length > 0) {
+            const lastMsg = context.chat[context.chat.length - 1];
+
+            // 마지막 메시지가 폰 로그이고 SMS 관련인 경우 병합
+            const lastMsgIsSms = lastMsg.extra?.is_phone_log &&
+                (lastMsg.mes?.includes('[📩') ||
+                 /\[(UNREAD|IGNORE|BLOCK)\]/i.test(lastMsg.mes));
+
+            if (lastMsgIsSms) {
+                // 기존 메시지에 줄바꿈으로 병합
+                lastMsg.mes = lastMsg.mes + '\n' + text;
+                lastMsg.send_date = Date.now(); // 타임스탬프 업데이트
+
+                // 저장
+                if (window.SlashCommandParser && window.SlashCommandParser.commands['savechat']) {
+                    window.SlashCommandParser.commands['savechat'].callback({});
+                } else if (typeof saveChatConditional === 'function') {
+                    saveChatConditional();
+                }
+
+                console.log('📩 [Messages] SMS 로그 병합됨:', text.substring(0, 30));
+                return; // 병합했으니 새 메시지 추가 안 함
+            }
+        }
 
         // [중요 수정] is_system: false로 변경!
         // 이렇게 해야 AI가 시스템 메시지가 아닌 "스토리의 일부"로 인식해서 절대 까먹지 않는다.
@@ -4993,6 +5232,9 @@ ${prefill ? `Start your response with: ${prefill}` : ''}`;
                 replyText = replyText.substring(prefill.trim().length).trim();
             }
 
+            // [NEW] pic 태그 제거
+            replyText = stripPicTags(replyText);
+
             if (replyText.includes('[IGNORE]') || replyText.includes('[NO_TEXT]') || replyText.startsWith('[📩')) {
                 console.log('📱 [Proactive] AI가 메시지 스킵');
                 return;
@@ -5463,6 +5705,7 @@ Description: "${photoDescription}"
         syncExternalMessage,
         updateMessagesBadge,
         addHiddenLog,
-        generateTransferReply
+        generateTransferReply,
+        generateWithProfile
     };
 })();

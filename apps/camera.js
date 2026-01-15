@@ -251,6 +251,7 @@ Example output format:
                     
                     <div class="st-cam-overlay-btns" id="st-cam-overlay-btns" style="display:none;">
                         <div class="st-cam-overlay-btn" id="st-save-album"><i class="fa-solid fa-download"></i> 앨범에 저장</div>
+                        <div class="st-cam-overlay-btn" id="st-send-message"><i class="fa-solid fa-paper-plane"></i> 메시지로 전송</div>
                         <div class="st-cam-overlay-btn" id="st-save-phone-bg"><i class="fa-solid fa-mobile-screen"></i> 폰 배경으로</div>
                     </div>
                 </div>
@@ -357,6 +358,15 @@ Example output format:
                 toastr.error("앨범 앱을 찾을 수 없습니다.");
             }
         });
+        
+        // [NEW] 메시지로 전송 버튼
+        $('#st-send-message').off('click').on('click', function() {
+            if (!lastImageUrl) {
+                toastr.warning("먼저 사진을 촬영해주세요!");
+                return;
+            }
+            showContactPicker(lastImageUrl, $prompt.val().trim());
+        });
 
         $('#st-save-phone-bg').off('click').on('click', function() {
             if (lastImageUrl) {
@@ -369,8 +379,154 @@ Example output format:
             }
         });
     }
+    
+    // [NEW] 연락처 선택 팝업 표시
+    function showContactPicker(imageUrl, caption) {
+        const contacts = window.STPhone.Apps?.Contacts?.getAllContacts?.() || [];
+        
+        if (contacts.length === 0) {
+            toastr.warning("연락처가 없습니다. 먼저 연락처를 추가해주세요.");
+            return;
+        }
+        
+        // 기존 팝업 제거
+        $('#st-cam-contact-picker').remove();
+        
+        const contactListHtml = contacts.map(c => `
+            <div class="st-cam-contact-item" data-id="${c.id}">
+                <img src="${c.avatar || 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'}" 
+                     onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'">
+                <span>${c.name}</span>
+            </div>
+        `).join('');
+        
+        const pickerHtml = `
+            <style>
+                .st-cam-contact-picker {
+                    position: absolute;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    background: rgba(0,0,0,0.9);
+                    z-index: 1001;
+                    display: flex;
+                    flex-direction: column;
+                    padding: 20px;
+                    box-sizing: border-box;
+                }
+                .st-cam-picker-header {
+                    color: white;
+                    font-size: 18px;
+                    font-weight: 600;
+                    margin-bottom: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .st-cam-picker-close {
+                    font-size: 24px;
+                    cursor: pointer;
+                    padding: 5px;
+                }
+                .st-cam-picker-preview {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 10px;
+                    background-size: cover;
+                    background-position: center;
+                    margin-bottom: 15px;
+                    border: 2px solid rgba(255,255,255,0.2);
+                }
+                .st-cam-contact-list {
+                    flex: 1;
+                    overflow-y: auto;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                .st-cam-contact-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 12px;
+                    background: rgba(255,255,255,0.1);
+                    border-radius: 12px;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                }
+                .st-cam-contact-item:hover {
+                    background: rgba(255,255,255,0.2);
+                }
+                .st-cam-contact-item img {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    object-fit: cover;
+                }
+                .st-cam-contact-item span {
+                    color: white;
+                    font-size: 15px;
+                }
+            </style>
+            <div class="st-cam-contact-picker" id="st-cam-contact-picker">
+                <div class="st-cam-picker-header">
+                    <span>📤 사진 보내기</span>
+                    <span class="st-cam-picker-close" id="st-cam-picker-close">×</span>
+                </div>
+                <div class="st-cam-picker-preview" style="background-image: url('${imageUrl}')"></div>
+                <div class="st-cam-contact-list">
+                    ${contactListHtml}
+                </div>
+            </div>
+        `;
+        
+        const $screen = window.STPhone.UI.getContentElement();
+        $screen.append(pickerHtml);
+        
+        // 닫기 버튼
+        $('#st-cam-picker-close').on('click', function() {
+            $('#st-cam-contact-picker').remove();
+        });
+        
+        // 연락처 선택
+        $('.st-cam-contact-item').on('click', function() {
+            const contactId = $(this).data('id');
+            const contact = window.STPhone.Apps?.Contacts?.getContact?.(contactId);
+            
+            if (!contact) {
+                toastr.error("연락처를 찾을 수 없습니다.");
+                return;
+            }
+            
+            // 메시지 앱으로 사진 전송
+            if (window.STPhone.Apps?.Messages) {
+                const Messages = window.STPhone.Apps.Messages;
+                
+                // 사진 메시지 추가 (유저가 보내는 것)
+                Messages.addMessage(contactId, 'me', caption || '', imageUrl);
+                
+                // 히든 로그 추가
+                const myName = window.SillyTavern?.getContext?.()?.name2 || 'User';
+                Messages.addHiddenLog(myName, `[📩 ${myName} -> ${contact.name}]: (Photo sent from Camera)`);
+                
+                toastr.success(`📤 ${contact.name}에게 사진을 보냈습니다!`);
+                
+                // 팝업 닫기
+                $('#st-cam-contact-picker').remove();
+                
+                // 메시지 앱으로 이동 (선택사항)
+                setTimeout(() => {
+                    if (confirm(`${contact.name}과의 채팅으로 이동하시겠습니까?`)) {
+                        Messages.openChat(contactId);
+                    }
+                }, 300);
+            } else {
+                toastr.error("메시지 앱을 찾을 수 없습니다.");
+            }
+        });
+    }
 
     return { 
-        open
+        open,
+        getLastImage: () => lastImageUrl
     };
 })();

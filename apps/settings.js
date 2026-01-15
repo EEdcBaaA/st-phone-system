@@ -45,6 +45,9 @@ Text to translate:`,
         recordMode: 'refresh',
         branchCopyRecords: false,
 
+        // ========== 로그 표시 설정 (NEW) ==========
+        showPhoneLogs: false, // [NEW] 문자/전화 로그 UI 표시 여부 (AI는 항상 볼 수 있음)
+
         // ========== 프롬프트 설정 (새로 추가) ==========
                 // [AI 동작 설정] 부분에 아래 한 줄 추가
         readReceiptEnabled: true, // [NEW] 읽음 확인 기능 (1 표시)
@@ -59,9 +62,19 @@ Text to translate:`,
 ### 📷 PHOTO REQUESTS
 To send a photo, reply with: [IMG: vivid description of photo content]
 
-###  CALL INITIATION
-To start a voice call, append [call to user] at the very end.
-NEVER decide {{user}}'s reaction. Just generate the tag and stop.
+### 📞 CALL INITIATION (STRICT RULES)
+**IMPORTANT: Use [call to user] tag VERY SPARINGLY.**
+- NEVER use if you are physically near {{user}} (same room, same location, face-to-face)
+- NEVER use for casual conversations that can continue via text
+- NEVER use multiple times in a short period
+- ONLY use when:
+  • Something URGENT requires immediate voice contact
+  • The situation ABSOLUTELY cannot be handled via text
+  • It's been a LONG time since last contact and you miss their voice
+  • You're in a completely DIFFERENT location and need to talk NOW
+
+If you decide to call, append [call to user] at the very END only.
+Do NOT explain why you're calling. Just add the tag and stop.
 
 ### ↩️ REPLY TO MESSAGE
 To reply to the user's last message specifically, prepend [REPLY] at the start of your message.
@@ -406,6 +419,9 @@ function loadFromStorage() {
             currentSettings.userTags = globalProfile.userTags || currentSettings.userTags;
             currentSettings.profileGlobal = true;
         }
+        
+        // [수정됨] 로그 표시 설정 즉시 적용 (CSS 클래스 기반)
+        applyLogVisibility();
     }
 
 // [NEW] 기존 chatId 기반 데이터를 캐릭터 기반으로 마이그레이션
@@ -727,6 +743,15 @@ function saveToStorage() {
         <div class="st-desc">문자 읽씹/안읽씹 시뮬레이션</div>
     </div>
     <input type="checkbox" class="st-switch" id="st-set-read-receipt">
+</div>
+
+<!-- [NEW] 로그 표시 토글 추가 -->
+<div class="st-row">
+    <div>
+        <span class="st-label">📋 문자/전화 로그 표시</span>
+        <div class="st-desc">채팅창에 히든 로그 보이기 (AI는 항상 인식)</div>
+    </div>
+    <input type="checkbox" class="st-switch" id="st-set-show-logs">
 </div>
 
 <div class="st-row-block">
@@ -1321,6 +1346,7 @@ function saveToStorage() {
         /* 수정 후 (loadValuesToUI 함수 안 - 아래줄 추가) */
 $('#st-set-sync').prop('checked', currentSettings.chatToSms);
 $('#st-set-read-receipt').prop('checked', currentSettings.readReceiptEnabled !== false); // [NEW] 로드
+$('#st-set-show-logs').prop('checked', currentSettings.showPhoneLogs === true); // [NEW] 로그 표시 로드
 $('#st-set-prefill').val(currentSettings.prefill);
 
 $('#st-set-timestamp-mode').val(currentSettings.timestampMode || 'none');
@@ -1587,6 +1613,23 @@ $('#st-set-profile-global').on('change', function() {
 $('#st-set-sync').on('change', function() { currentSettings.chatToSms = $(this).is(':checked'); saveToStorage(); });
 // [NEW] 리스너 추가
 $('#st-set-read-receipt').on('change', function() { currentSettings.readReceiptEnabled = $(this).is(':checked'); saveToStorage(); });
+// [수정됨] 로그 표시 토글 리스너 - CSS 클래스 기반
+$('#st-set-show-logs').on('change', function() {
+    currentSettings.showPhoneLogs = $(this).is(':checked');
+    saveToStorage();
+    
+    // [수정됨] CSS 클래스로 표시/숨김 제어
+    applyLogVisibility();
+    
+    if (currentSettings.showPhoneLogs) {
+        toastr.info('📋 문자/전화 로그가 표시됩니다');
+    } else {
+        toastr.info('📋 문자/전화 로그가 숨겨집니다');
+    }
+    
+    // [NEW] 커스텀 이벤트 발생 (index.js에서도 처리할 수 있도록)
+    $(document).trigger('stPhoneSettingsChanged', [currentSettings]);
+});
 $('#st-set-prefill').on('input', function() { currentSettings.prefill = $(this).val(); saveToStorage(); });
 $('#st-set-timestamp-mode').on('change', function() { currentSettings.timestampMode = $(this).val(); saveToStorage(); });
 $('#st-set-max-tokens').on('input', function() { currentSettings.maxContextTokens = parseInt($(this).val()) || 4096; saveToStorage(); });
@@ -2088,6 +2131,17 @@ $('#st-reset-user-translate-prompt').on('click', () => {
         $('#st-phone-container').css('--pt-font', fonts[currentSettings.fontFamily] || fonts['default']);
     }
 
+    // [NEW] 로그 표시/숨김 CSS 클래스 적용
+    function applyLogVisibility() {
+        if (currentSettings.showPhoneLogs === true) {
+            $('body').addClass('st-show-phone-logs');
+            console.log('📱 [Settings] 로그 표시 모드 ON');
+        } else {
+            $('body').removeClass('st-show-phone-logs');
+            console.log('📱 [Settings] 로그 표시 모드 OFF');
+        }
+    }
+
     function init() {
         // 초기 로드
         loadFromStorage();
@@ -2107,5 +2161,5 @@ $('#st-reset-user-translate-prompt').on('click', () => {
         }, 1000);
     }
 
-    return { open, init, getSettings, getPromptDepth, updateSetting, syncFromSillyTavern, getBlockedContacts, blockContact, unblockContact, isBlocked };
+    return { open, init, getSettings, getPromptDepth, updateSetting, syncFromSillyTavern, getBlockedContacts, blockContact, unblockContact, isBlocked, applyLogVisibility };
 })();

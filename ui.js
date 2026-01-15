@@ -61,6 +61,9 @@ window.STPhone.UI = (function() {
     }
 
     function renderHomeScreen() {
+        // [추가] 홈 화면에서는 홈바 항상 표시
+        $('#st-home-btn').removeClass('st-hidden');
+
         const $screen = $('#st-phone-content');
         $screen.empty();
 
@@ -264,6 +267,9 @@ window.STPhone.UI = (function() {
                 break;
             case 'instagram':
                 Apps.Instagram?.open();
+                break;
+            case 'gifts':
+                Apps.Gifts?.open();
                 break;
             default:
                 toastr.warning('앱을 찾을 수 없습니다.');
